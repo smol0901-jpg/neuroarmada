@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Нейроармада</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg-dark: #0f0f1a; --bg-card: #1a1a2e; --bg-card-light: #252542;
+      --accent-orange: #FF8C42; --accent-yellow: #FFD700;
+      --accent-cyan: #4ECDC4; --accent-purple: #A78BFA;
+      --text-primary: #ffffff; --text-secondary: #a0a0b0;
+    }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: 'Nunito', sans-serif;
+      background: var(--bg-dark); color: var(--text-primary);
+      touch-action: none;
+    }
+    #app { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+    .header {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;
+      z-index: 100; background: linear-gradient(to bottom, rgba(15,15,26,0.95), transparent);
+    }
+    .title {
+      font-size: 1.5rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent-orange), var(--accent-yellow));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .header-controls { display: flex; gap: 8px; }
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 12px; border: none;
+      background: var(--bg-card); color: var(--text-primary); font-size: 1.2rem;
+      cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;
+    }
+    .icon-btn:active { transform: scale(0.95); background: var(--bg-card-light); }
+    .icon-btn.muted { opacity: 0.5; }
+    #gameCanvas { display: block; touch-action: none; }
+    .info-panel {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+      z-index: 100; background: linear-gradient(to top, rgba(15,15,26,0.95), transparent);
+    }
+    .info-card { background: var(--bg-card); border-radius: 16px; padding: 12px; text-align: center; }
+    .info-label { font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .info-value { font-size: 1.5rem; font-weight: 700; color: var(--accent-orange); }
+    .info-value.target { color: var(--accent-cyan); }
+    .info-value.combo { color: var(--accent-yellow); }
+    .progress-container { width: 100%; height: 8px; background: var(--bg-card); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
+    .bottom-buttons {
+      position: absolute; bottom: 120px; left: 0; right: 0;
+      padding: 0 20px; display: flex; gap: 12px; z-index: 100;
+    }
+    .game-btn {
+      flex: 1; padding: 14px 20px; border-radius: 16px; border: none;
+      font-family: 'Nunito', sans-serif; font-size: 0.9rem; font-weight: 700;
+      cursor: pointer; transition: all 0.2s ease; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .game-btn.primary {
+      background: linear-gradient(135deg, var(--accent-orange), #FF6B35);
+      color: white; box-shadow: 0 4px 20px rgba(255,140,66,0.4);
+    }
+    .game-btn.secondary { background: var(--bg-card); color: var(--text-primary); }
+    .game-btn:active { transform: scale(0.96); }
+    .level-badge {
+      position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+      background: var(--bg-card); padding: 8px 20px; border-radius: 20px;
+      font-weight: 600; font-size: 0.9rem; z-index: 100; border: 1px solid rgba(255,255,255,0.1);
+    }
+    .combo-badge {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 3rem; font-weight: 800; color: var(--accent-yellow);
+      text-shadow: 0 0 30px rgba(255,215,0,0.8); pointer-events: none;
+      opacity: 0; transition: opacity 0.3s ease; z-index: 200;
+    }
+    .combo-badge.show { opacity: 1; animation: comboPop 0.5s ease; }
+    @keyframes comboPop {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+    }
+    @media (max-width: 480px) {
+      .title { font-size: 1.2rem; }
+      .info-panel { padding: 12px 16px; }
+      .info-value { font-size: 1.2rem; }
+      .bottom-buttons { bottom: 100px; padding: 0 16px; }
+      .game-btn { padding: 12px 16px; font-size: 0.8rem; }
+    }
+    .loading {
+      position: fixed; inset: 0; background: var(--bg-dark);
+      display: flex; align-items: center; justify-content: center; z-index: 1000;
+      transition: opacity 0.5s ease;
+    }
+    .loading.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner {
+      width: 60px; height: 60px; border: 4px solid var(--bg-card);
+      border-top-color: var(--accent-orange); border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">
+    <div class="loading-spinner"></div>
+  </div>
+  <div id="app">
+    <header class="header">
+      <h1 class="title">🐯 НЕЙРОАРМАДА</h1>
+      <div class="header-controls">
+        <button class="icon-btn" id="soundBtn" title="Звук">🔊</button>
+        <button class="icon-btn" id="musicBtn" title="Музыка">🎵</button>
+        <button class="icon-btn" id="settingsBtn" title="Настройки">⚙️</button>
+      </div>
+    </header>
+    <div class="level-badge" id="levelBadge">Уровень 1</div>
+    <div class="combo-badge" id="comboBadge">x2.0</div>
+    <canvas id="gameCanvas"></canvas>
+    <div class="bottom-buttons">
+      <button class="game-btn secondary" id="hintBtn">💡 Подсказка</button>
+      <button class="game-btn secondary" id="addBtn">+ Тигры</button>
+      <button class="game-btn primary" id="resetBtn">🔄 Сброс</button>
+    </div>
+    <div class="info-panel">
+      <div class="info-card">
+        <div class="info-label">Очки</div>
+        <div class="info-value" id="scoreDisplay">0</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">Цель</div>
+        <div class="info-value target" id="targetDisplay">100</div>
+        <div class="progress-container">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">Комбо</div>
+        <div class="info-value combo" id="comboDisplay">x1.0</div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
