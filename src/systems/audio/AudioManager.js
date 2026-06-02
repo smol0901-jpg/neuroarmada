@@ -3,7 +3,11 @@
  * Поддержка как синтеза, так и звуковых файлов
  */
 
+
 import { EventEmitter } from '../../utils/eventemitter.js';
+
+// Базовая директория для GitHub Pages
+const BASE_PATH = '/neuroarmada';
 
 export class AudioManager extends EventEmitter {
   constructor() {
@@ -16,11 +20,9 @@ export class AudioManager extends EventEmitter {
     this.musicEnabled = true;
     this.isPlaying = false;
     
-    // Звуковые буферы
     this.buffers = {};
     this.activeSources = {};
     
-    // Пути к звуковым файлам (будут загружены из папки assets/audio)
     this.soundFiles = {
       click: 'click.mp3',
       match: 'match.mp3',
@@ -31,7 +33,6 @@ export class AudioManager extends EventEmitter {
       combo: 'combo.mp3'
     };
     
-    // Фоновые треки
     this.bgmFiles = ['bgm1.mp3', 'bgm2.mp3', 'bgm3.mp3', 'bgm4.mp3'];
     this.currentBgmIndex = 0;
   }
@@ -53,14 +54,13 @@ export class AudioManager extends EventEmitter {
     
     this.masterGain.gain.value = 1;
     
-    // Загружаем звуковые файлы
     this.loadSounds();
   }
 
   async loadSounds() {
-    const basePath = '/assets/audio/';
+    // Используем BASE_PATH для GitHub Pages
+    const basePath = BASE_PATH + '/assets/audio/';
     
-    // Загружаем SFX
     for (const [key, filename] of Object.entries(this.soundFiles)) {
       try {
         const response = await fetch(basePath + filename);
@@ -70,12 +70,10 @@ export class AudioManager extends EventEmitter {
           this.buffers[key] = audioBuffer;
         }
       } catch (e) {
-        // Файл не найден - используем синтез
         console.log(`Sound ${filename} not found, using synthesis`);
       }
     }
     
-    // Загружаем BGM
     for (const filename of this.bgmFiles) {
       try {
         const response = await fetch(basePath + filename);
@@ -93,7 +91,6 @@ export class AudioManager extends EventEmitter {
   playSound(key) {
     if (!this.ctx || (key !== 'bgm' && !this.enabled)) return;
     
-    // Если есть файл - играем его
     if (this.buffers[key]) {
       const source = this.ctx.createBufferSource();
       source.buffer = this.buffers[key];
@@ -109,7 +106,6 @@ export class AudioManager extends EventEmitter {
       return source;
     }
     
-    // Иначе - синтез
     this.playSynthesis(key);
   }
 
@@ -197,7 +193,6 @@ export class AudioManager extends EventEmitter {
     this.playSound('combo');
   }
 
-  // Фоновая музыка
   playBgm() {
     if (!this.ctx || !this.musicEnabled || this.isPlaying) return;
     
@@ -222,13 +217,11 @@ export class AudioManager extends EventEmitter {
       
       this.activeSources.bgm = source;
     } else {
-      // Синтез фоновой музыки (простой бит)
       this.playBgmSynthesis();
     }
   }
 
   playBgmSynthesis() {
-    // Простой фоновый бит
     const playBeat = () => {
       if (!this.isPlaying || !this.musicEnabled) return;
       
