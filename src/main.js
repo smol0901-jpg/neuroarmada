@@ -2,7 +2,6 @@
  * Main - Точка входа приложения
  */
 
-
 import { Game } from './core/game.js';
 import { StorageManager } from './core/storage.js';
 import { InputManager } from './utils/input.js';
@@ -54,14 +53,17 @@ class App {
   }
 
   setupInput() {
+    // Тап (клик)
     this.input.on('tap', ({ x, y }) => {
-      this.game.onInput(x, y);
+      this.game.onInput(x, y, 'tap');
     });
     
-    this.input.on('swipe', ({ x, y, direction }) => {
-      // Можно использовать для свайпа плиток
+    // Свайп
+    this.input.on('swipe', ({ x, y, direction, dx, dy }) => {
+      this.game.onInput(x, y, 'swipe');
     });
     
+    // Клавиши
     this.input.on('reset', () => {
       this.game.reset();
     });
@@ -69,32 +71,53 @@ class App {
     this.input.on('hint', () => {
       this.game.showHint();
     });
+    
+    this.input.on('music', () => {
+      this.toggleMusic();
+    });
+    
+    this.input.on('sound', () => {
+      this.toggleSound();
+    });
   }
-
 
   setupButtons() {
     const soundBtn = document.getElementById('soundBtn');
-    soundBtn.addEventListener('click', () => {
-      const enabled = !this.storage.getSetting('sound');
-      this.storage.setSetting('sound', enabled);
-      soundBtn.textContent = enabled ? '🔊' : '🔇';
-      soundBtn.classList.toggle('muted', !enabled);
-    });
+    soundBtn.addEventListener('click', () => this.toggleSound());
     
     const musicBtn = document.getElementById('musicBtn');
-    musicBtn.addEventListener('click', () => {
-      const enabled = !this.storage.getSetting('music');
-      this.storage.setSetting('music', enabled);
-      musicBtn.textContent = enabled ? '🎵' : '🔇';
-      musicBtn.classList.toggle('muted', !enabled);
-    });
+    musicBtn.addEventListener('click', () => this.toggleMusic());
     
     document.getElementById('hintBtn').addEventListener('click', () => this.game.showHint());
     document.getElementById('addBtn').addEventListener('click', () => this.game.addTiles());
     document.getElementById('resetBtn').addEventListener('click', () => this.game.reset());
-    document.getElementById('settingsBtn').addEventListener('click', () => {
-      this.showSettingsModal();
-    });
+    document.getElementById('settingsBtn').addEventListener('click', () => this.showSettingsModal());
+  }
+
+  toggleSound() {
+    const enabled = !this.storage.getSetting('sound');
+    this.storage.setSetting('sound', enabled);
+    const soundBtn = document.getElementById('soundBtn');
+    soundBtn.textContent = enabled ? '🔊' : '🔇';
+    soundBtn.classList.toggle('muted', !enabled);
+    
+    if (enabled) {
+      this.game.audio.playClick();
+    }
+  }
+
+  toggleMusic() {
+    const enabled = !this.storage.getSetting('music');
+    this.storage.setSetting('music', enabled);
+    const musicBtn = document.getElementById('musicBtn');
+    musicBtn.textContent = enabled ? '🎵' : '🔇';
+    musicBtn.classList.toggle('muted', !enabled);
+    
+    if (enabled) {
+      this.game.audio.playBgm();
+    } else {
+      this.game.audio.stopBgm();
+    }
   }
 
   showSettingsModal() {
@@ -125,16 +148,18 @@ class App {
     
     document.body.appendChild(modal);
     
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+    
     document.getElementById('closeModal').onclick = () => modal.remove();
     document.getElementById('toggleSound').onclick = () => {
-      const enabled = !this.storage.getSetting('sound');
-      this.storage.setSetting('sound', enabled);
-      document.getElementById('toggleSound').textContent = enabled ? 'Вкл' : 'Выкл';
+      this.toggleSound();
+      document.getElementById('toggleSound').textContent = this.storage.getSetting('sound') ? 'Вкл' : 'Выкл';
     };
     document.getElementById('toggleMusic').onclick = () => {
-      const enabled = !this.storage.getSetting('music');
-      this.storage.setSetting('music', enabled);
-      document.getElementById('toggleMusic').textContent = enabled ? 'Вкл' : 'Выкл';
+      this.toggleMusic();
+      document.getElementById('toggleMusic').textContent = this.storage.getSetting('music') ? 'Вкл' : 'Выкл';
     };
   }
 
