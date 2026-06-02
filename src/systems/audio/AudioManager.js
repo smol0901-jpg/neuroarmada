@@ -1,5 +1,6 @@
 /**
  * AudioManager - Управление звуком и музыкой
+ * Поддержка как синтеза, так и звуковых файлов
  */
 
 import { EventEmitter } from '../../utils/eventemitter.js';
@@ -14,6 +15,25 @@ export class AudioManager extends EventEmitter {
     this.enabled = true;
     this.musicEnabled = true;
     this.isPlaying = false;
+    
+    // Звуковые буферы
+    this.buffers = {};
+    this.activeSources = {};
+    
+    // Пути к звуковым файлам (будут загружены из папки assets/audio)
+    this.soundFiles = {
+      click: 'click.mp3',
+      match: 'match.mp3',
+      error: 'error.mp3',
+      win: 'win.mp3',
+      shuffle: 'shuffle.mp3',
+      select: 'select.mp3',
+      combo: 'combo.mp3'
+    };
+    
+    // Фоновые треки
+    this.bgmFiles = ['bgm1.mp3', 'bgm2.mp3', 'bgm3.mp3', 'bgm4.mp3'];
+    this.currentBgmIndex = 0;
   }
 
   init() {
@@ -32,6 +52,98 @@ export class AudioManager extends EventEmitter {
     this.masterGain.connect(this.ctx.destination);
     
     this.masterGain.gain.value = 1;
+    
+    // Загружаем звуковые файлы
+    this.loadSounds();
+  }
+
+  async loadSounds() {
+    const basePath = '/assets/audio/';
+    
+    // Загружаем SFX
+    for (const [key, filename] of Object.entries(this.soundFiles)) {
+      try {
+        const response = await fetch(basePath + filename);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+          this.buffers[key] = audioBuffer;
+        }
+      } catch (e) {
+        // Файл не найден - используем синтез
+        console.log(`Sound ${filename} not found, using synthesis`);
+      }
+    }
+    
+    // Загружаем BGM
+    for (const filename of this.bgmFiles) {
+      try {
+        const response = await fetch(basePath + filename);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+          this.buffers['bgm_' + filename.replace('.mp3', '')] = audioBuffer;
+        }
+      } catch (e) {
+        console.log(`BGM ${filename} not found`);
+      }
+    }
+  }
+
+  playSound(key) {
+    if (!this.ctx || (key !== 'bgm' && !this.enabled)) return;
+    
+    // Если есть файл - играем его
+    if (this.buffers[key]) {
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.buffers[key];
+      
+      const gain = key === 'bgm' ? this.bgmGain : this.sfxGain;
+      source.connect(gain);
+      source.start();
+      
+      if (key !== 'bgm') {
+        source.onended = () => source.disconnect();
+      }
+      
+      return source;
+    }
+    
+    // Иначе - синтез
+    this.playSynthesis(key);
+  }
+
+  playSynthesis(key) {
+    switch (key) {
+      case 'click':
+        this.playTone(800, 0.1, 'sine');
+        break;
+      case 'select':
+        this.playTone(600, 0.08, 'sine');
+        break;
+      case 'match':
+        this.playTone(523, 0.15, 'sine');
+        setTimeout(() => this.playTone(659, 0.15, 'sine'), 50);
+        setTimeout(() => this.playTone(784, 0.2, 'sine'), 100);
+        break;
+      case 'error':
+        this.playTone(200, 0.3, 'sawtooth');
+        break;
+      case 'win':
+        const notes = [523, 659, 784, 1047];
+        notes.forEach((n, i) => setTimeout(() => this.playTone(n, 0.3, 'sine'), i * 100));
+        break;
+      case 'shuffle':
+        for (let i = 0; i < 5; i++) {
+          setTimeout(() => this.playTone(300 + Math.random() * 500, 0.1, 'square'), i * 50);
+        }
+        break;
+      case 'combo':
+        this.playTone(440, 0.1, 'sine');
+        setTimeout(() => this.playTone(554, 0.1, 'sine'), 80);
+        setTimeout(() => this.playTone(659, 0.15, 'sine'), 160);
+        break;
+    }
   }
 
   playTone(freq, dur, type = 'sine', target = 'sfx') {
@@ -52,32 +164,96 @@ export class AudioManager extends EventEmitter {
 
   playClick() {
     this.init();
-    this.playTone(800, 0.1, 'sine');
+    this.playSound('click');
+  }
+
+  playSelect() {
+    this.init();
+    this.playSound('select');
   }
 
   playMatch() {
     this.init();
-    this.playTone(523, 0.15, 'sine');
-    setTimeout(() => this.playTone(659, 0.15, 'sine'), 50);
-    setTimeout(() => this.playTone(784, 0.2, 'sine'), 100);
+    this.playSound('match');
   }
 
   playError() {
     this.init();
-    this.playTone(200, 0.3, 'sawtooth');
+    this.playSound('error');
   }
 
   playWin() {
     this.init();
-    const notes = [523, 659, 784, 1047];
-    notes.forEach((n, i) => setTimeout(() => this.playTone(n, 0.3, 'sine'), i * 100));
+    this.playSound('win');
   }
 
   playShuffle() {
     this.init();
-    for (let i = 0; i < 5; i++) {
-      setTimeout(() => this.playTone(300 + Math.random() * 500, 0.1, 'square'), i * 50);
+    this.playSound('shuffle');
+  }
+
+  playCombo() {
+    this.init();
+    this.playSound('combo');
+  }
+
+  // Фоновая музыка
+  playBgm() {
+    if (!this.ctx || !this.musicEnabled || this.isPlaying) return;
+    
+    this.isPlaying = true;
+    this.playNextBgm();
+  }
+
+  playNextBgm() {
+    if (!this.musicEnabled) {
+      this.isPlaying = false;
+      return;
     }
+    
+    const key = 'bgm_' + (this.currentBgmIndex + 1);
+    
+    if (this.buffers[key]) {
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.buffers[key];
+      source.loop = true;
+      source.connect(this.bgmGain);
+      source.start();
+      
+      this.activeSources.bgm = source;
+    } else {
+      // Синтез фоновой музыки (простой бит)
+      this.playBgmSynthesis();
+    }
+  }
+
+  playBgmSynthesis() {
+    // Простой фоновый бит
+    const playBeat = () => {
+      if (!this.isPlaying || !this.musicEnabled) return;
+      
+      this.playTone(110, 0.1, 'sine', 'bgm');
+      setTimeout(() => this.playTone(110, 0.1, 'sine', 'bgm'), 250);
+      setTimeout(() => this.playTone(146, 0.15, 'sine', 'bgm'), 500);
+      
+      setTimeout(playBeat, 1000);
+    };
+    
+    playBeat();
+  }
+
+  stopBgm() {
+    this.isPlaying = false;
+    if (this.activeSources.bgm) {
+      this.activeSources.bgm.stop();
+      this.activeSources.bgm = null;
+    }
+  }
+
+  nextBgm() {
+    this.stopBgm();
+    this.currentBgmIndex = (this.currentBgmIndex + 1) % this.bgmFiles.length;
+    this.playBgm();
   }
 
   setEnabled(enabled) {
@@ -89,5 +265,10 @@ export class AudioManager extends EventEmitter {
 
   setMusicEnabled(enabled) {
     this.musicEnabled = enabled;
+    if (!enabled) {
+      this.stopBgm();
+    } else {
+      this.playBgm();
+    }
   }
 }
