@@ -37,6 +37,9 @@ export class Game {
     
     this.hintTile = null;
     this.hintTimeout = null;
+    
+    // Для свайпов
+    this.swipeStart = null;
   }
 
   initWorker() {
@@ -87,18 +90,24 @@ export class Game {
     this.checkValidMoves();
   }
 
-  onInput(x, y) {
+  onInput(x, y, type = 'tap') {
     if (this.state !== 'playing' || this.isAnimating) return;
     
     const tile = this.board.getTileAt(x, y);
     if (!tile) return;
+    
+    if (type === 'swipe') {
+      // Обработка свайпа - пробуем сдвинуть плитку
+      this.handleSwipe(x, y);
+      return;
+    }
     
     this.clearHint();
     
     if (!this.selectedTile) {
       this.selectedTile = tile;
       this.board.highlightTile(tile);
-      this.audio.playClick();
+      this.audio.playSelect();
       this.particles.emit('select', tile.row, tile.col);
     } else {
       if (this.selectedTile.row === tile.row && 
@@ -113,7 +122,45 @@ export class Game {
       } else {
         this.board.highlightTile(tile);
         this.selectedTile = tile;
+        this.audio.playSelect();
       }
+    }
+  }
+
+  handleSwipe(x, y) {
+    if (!this.selectedTile) {
+      // Если ничего не выбрано - выбираем тайл под пальцем
+      const tile = this.board.getTileAt(x, y);
+      if (tile) {
+        this.selectedTile = tile;
+        this.board.highlightTile(tile);
+        this.audio.playSelect();
+      }
+      return;
+    }
+    
+    // Определяем направление свайпа относительно центра выбранной плитки
+    const tileCenter = this.board.getTileCenter(this.selectedTile.row, this.selectedTile.col);
+    const dx = x - tileCenter.x;
+    const dy = y - tileCenter.y;
+    
+    let targetRow = this.selectedTile.row;
+    let targetCol = this.selectedTile.col;
+    
+    if (Math.abs(dx) > Math.abs(dy)) {
+      // Горизонтальный свайп
+      targetCol += dx > 0 ? 1 : -1;
+    } else {
+      // Вертикальный свайп
+      targetRow += dy > 0 ? 1 : -1;
+    }
+    
+    const targetTile = this.board.getTileAtPosition(targetRow, targetCol);
+    if (targetTile && this.board.isAdjacent(
+      this.selectedTile.row, this.selectedTile.col,
+      targetRow, targetCol
+    )) {
+      this.attemptSwap(this.selectedTile, targetTile);
     }
   }
 
@@ -203,7 +250,7 @@ export class Game {
       this.level++;
       this.storage.completeLevel(this.level - 1);
       this.showLevelComplete();
-      setTimeout(() => this.startLevel(this.level), 2000);
+      setTimeout(() => this.startLevel(this.level), 2500);
     } else {
       this.checkValidMoves();
     }
@@ -248,7 +295,8 @@ export class Game {
     if (this.combo > 1) {
       badge.textContent = `x${this.multiplier.toFixed(1)}`;
       badge.classList.add('show');
-      setTimeout(() => badge.classList.remove('show'), 500);
+      this.audio.playCombo();
+      setTimeout(() => badge.classList.remove('show'), 600);
     }
   }
 
@@ -264,6 +312,7 @@ export class Game {
 
   addTiles() {
     this.audio.playClick();
+    // Дополнительная функция - можно добавить бонусы
   }
 
   reset() {
