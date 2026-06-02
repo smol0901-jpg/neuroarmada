@@ -8,6 +8,9 @@ import { MatchFinder } from './match.js';
 import { AudioManager } from '../systems/audio/AudioManager.js';
 import { ParticleSystem } from '../systems/particles/ParticleSystem.js';
 
+// Определяем базовый путь для хостинга
+const BASE_PATH = '/neuroarmada';
+
 export class Game {
   constructor(ctx, storage) {
     this.ctx = ctx;
@@ -44,7 +47,9 @@ export class Game {
 
   initWorker() {
     try {
-      this.worker = new Worker('/src/workers/matchWorker.js', { type: 'module' });
+      // Используем относительный путь для GitHub Pages
+      const workerPath = BASE_PATH + '/src/workers/matchWorker.js';
+      this.worker = new Worker(workerPath, { type: 'module' });
       this.worker.onmessage = (e) => this.handleWorkerMessage(e.data);
     } catch (e) {
       console.warn('Worker not available, using fallback');
@@ -97,7 +102,6 @@ export class Game {
     if (!tile) return;
     
     if (type === 'swipe') {
-      // Обработка свайпа - пробуем сдвинуть плитку
       this.handleSwipe(x, y);
       return;
     }
@@ -129,7 +133,6 @@ export class Game {
 
   handleSwipe(x, y) {
     if (!this.selectedTile) {
-      // Если ничего не выбрано - выбираем тайл под пальцем
       const tile = this.board.getTileAt(x, y);
       if (tile) {
         this.selectedTile = tile;
@@ -139,7 +142,6 @@ export class Game {
       return;
     }
     
-    // Определяем направление свайпа относительно центра выбранной плитки
     const tileCenter = this.board.getTileCenter(this.selectedTile.row, this.selectedTile.col);
     const dx = x - tileCenter.x;
     const dy = y - tileCenter.y;
@@ -148,10 +150,8 @@ export class Game {
     let targetCol = this.selectedTile.col;
     
     if (Math.abs(dx) > Math.abs(dy)) {
-      // Горизонтальный свайп
       targetCol += dx > 0 ? 1 : -1;
     } else {
-      // Вертикальный свайп
       targetRow += dy > 0 ? 1 : -1;
     }
     
@@ -170,7 +170,6 @@ export class Game {
     
     await this.board.animateSwap(tile1, tile2);
     
-    // Проверяем через worker
     if (this.worker) {
       this.isProcessing = true;
       this.worker.postMessage({
@@ -214,7 +213,6 @@ export class Game {
     await this.board.dropTiles();
     await this.board.fillEmpty();
     
-    // Проверяем новые совпадения
     if (this.worker) {
       this.isProcessing = true;
       this.worker.postMessage({
@@ -312,7 +310,6 @@ export class Game {
 
   addTiles() {
     this.audio.playClick();
-    // Дополнительная функция - можно добавить бонусы
   }
 
   reset() {
