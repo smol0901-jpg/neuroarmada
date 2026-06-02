@@ -6,6 +6,7 @@
 import { BoardManager } from './board.js';
 import { MatchFinder } from './match.js';
 import { AudioManager } from '../systems/audio/AudioManager.js';
+import { ParticleSystem } from '../systems/particles/ParticleSystem.js';
 
 export class Game {
   constructor(ctx, storage) {
@@ -15,8 +16,12 @@ export class Game {
     this.board = new BoardManager();
     this.matchFinder = new MatchFinder(this.board);
     this.audio = new AudioManager();
+    this.particles = new ParticleSystem();
     
-    this.state = 'playing'; // playing, animating, paused
+    this.worker = null;
+    this.initWorker();
+    
+    this.state = 'playing';
     this.level = 1;
     this.score = 0;
     this.targetScore = 100;
@@ -25,15 +30,49 @@ export class Game {
     
     this.selectedTile = null;
     this.isAnimating = false;
+    this.isProcessing = false;
     
     this.width = 0;
     this.height = 0;
+    
+    this.hintTile = null;
+    this.hintTimeout = null;
+  }
+
+  initWorker() {
+    try {
+      this.worker = new Worker('/src/workers/matchWorker.js', { type: 'module' });
+      this.worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+    } catch (e) {
+      console.warn('Worker not available, using fallback');
+    }
+  }
+
+  handleWorkerMessage(data) {
+    switch (data.type) {
+      case 'matches':
+        if (data.matches.length > 0 && !this.isProcessing) {
+          this.processMatches(data.matches);
+        }
+        break;
+      case 'validMoves':
+        if (!data.hasMoves && this.state === 'playing') {
+          this.shuffleBoard();
+        }
+        break;
+      case 'bestMove':
+        if (data.bestMove) {
+          this.showHintMove(data.bestMove);
+        }
+        break;
+    }
   }
 
   resize(width, height) {
     this.width = width;
     this.height = height;
     this.board.resize(width, height);
+    this.particles.resize(width, height);
   }
 
   startLevel(level) {
@@ -45,6 +84,7 @@ export class Game {
     
     this.board.generateBoard(level);
     this.updateUI();
+    this.checkValidMoves();
   }
 
   onInput(x, y) {
@@ -53,26 +93,24 @@ export class Game {
     const tile = this.board.getTileAt(x, y);
     if (!tile) return;
     
+    this.clearHint();
+    
     if (!this.selectedTile) {
-      // Выбор первой плитки
       this.selectedTile = tile;
       this.board.highlightTile(tile);
       this.audio.playClick();
+      this.particles.emit('select', tile.row, tile.col);
     } else {
-      // Вторая плитка
       if (this.selectedTile.row === tile.row && 
           this.selectedTile.col === tile.col) {
-        // Отмена выбора
         this.board.clearHighlight();
         this.selectedTile = null;
       } else if (this.board.isAdjacent(
         this.selectedTile.row, this.selectedTile.col,
         tile.row, tile.col
       )) {
-        // Попытка обмена
         this.attemptSwap(this.selectedTile, tile);
       } else {
-        // Новый выбор
         this.board.highlightTile(tile);
         this.selectedTile = tile;
       }
@@ -83,106 +121,174 @@ export class Game {
     this.isAnimating = true;
     this.board.clearHighlight();
     
-    // Визуальный обмен
     await this.board.animateSwap(tile1, tile2);
     
-    // Поиск совпадений
-    const matches = this.matchFinder.findMatches();
-    
-    if (matches.length > 0) {
-      // Есть совпадения - обрабатываем
-      this.audio.playMatch();
-      await this.processMatches(matches);
+    // Проверяем через worker
+    if (this.worker) {
+      this.isProcessing = true;
+      this.worker.postMessage({
+        type: 'findMatches',
+        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
+      });
     } else {
-      // Нет совпадений - возвращаем
-      await this.board.animateSwap(tile1, tile2);
-      this.audio.playError();
+      const matches = this.matchFinder.findMatches();
+      if (matches.length > 0) {
+        this.processMatches(matches);
+      } else {
+        await this.board.animateSwap(tile1, tile2);
+        this.audio.playError();
+      }
     }
     
     this.selectedTile = null;
-    this.isAnimating = false;
   }
 
   async processMatches(matches) {
-    // Подсчёт очков
+    this.isProcessing = false;
+    this.isAnimating = true;
+    
     let matchScore = 0;
     for (const match of matches) {
       matchScore += match.length * 10 * this.multiplier;
+      
+      for (const pos of match.positions) {
+        this.particles.emit('match', pos.row, pos.col, match.type);
+      }
     }
     
     this.score += matchScore;
     this.combo++;
     this.multiplier = Math.min(1 + this.combo * 0.5, 5);
     
-    // Удаление плиток
-    await this.board.removeTiles(matches);
+    this.audio.playMatch();
+    this.showCombo();
     
-    // Падение
+    await this.board.removeTiles(matches);
     await this.board.dropTiles();
     await this.board.fillEmpty();
     
-    // Проверка новых совпадений
-    const newMatches = this.matchFinder.findMatches();
-    if (newMatches.length > 0) {
-      await this.processMatches(newMatches);
+    // Проверяем новые совпадения
+    if (this.worker) {
+      this.isProcessing = true;
+      this.worker.postMessage({
+        type: 'findMatches',
+        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
+      });
     } else {
-      // Проверка уровня
-      this.checkLevelComplete();
+      const newMatches = this.matchFinder.findMatches();
+      if (newMatches.length > 0) {
+        await this.processMatches(newMatches);
+      } else {
+        this.checkLevelComplete();
+      }
     }
     
     this.updateUI();
   }
 
+  checkValidMoves() {
+    if (this.worker) {
+      this.worker.postMessage({
+        type: 'hasValidMoves',
+        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
+      });
+    }
+  }
+
   checkLevelComplete() {
+    this.isAnimating = false;
+    
     if (this.score >= this.targetScore) {
       this.audio.playWin();
       this.level++;
       this.storage.completeLevel(this.level - 1);
-      this.startLevel(this.level);
-    } else if (!this.matchFinder.hasValidMoves()) {
-      // Нет ходов - перемешивание
-      this.board.generateBoard(this.level);
-      this.audio.playShuffle();
+      this.showLevelComplete();
+      setTimeout(() => this.startLevel(this.level), 2000);
+    } else {
+      this.checkValidMoves();
     }
   }
 
+  shuffleBoard() {
+    this.audio.playShuffle();
+    this.board.generateBoard(this.level);
+    this.checkValidMoves();
+  }
+
   showHint() {
-    // Найти лучший ход
-    // Пока заглушка
-    this.audio.playClick();
+    if (this.worker) {
+      this.worker.postMessage({
+        type: 'findBestMove',
+        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
+      });
+    }
+  }
+
+  showHintMove(move) {
+    this.hintTile = move.from;
+    this.board.highlightTile({ row: move.from.row, col: move.from.col });
+    
+    if (this.hintTimeout) clearTimeout(this.hintTimeout);
+    this.hintTimeout = setTimeout(() => {
+      this.clearHint();
+    }, 3000);
+  }
+
+  clearHint() {
+    this.board.clearHighlight();
+    this.hintTile = null;
+    if (this.hintTimeout) {
+      clearTimeout(this.hintTimeout);
+      this.hintTimeout = null;
+    }
+  }
+
+  showCombo() {
+    const badge = document.getElementById('comboBadge');
+    if (this.combo > 1) {
+      badge.textContent = `x${this.multiplier.toFixed(1)}`;
+      badge.classList.add('show');
+      setTimeout(() => badge.classList.remove('show'), 500);
+    }
+  }
+
+  showLevelComplete() {
+    const badge = document.getElementById('levelBadge');
+    badge.textContent = '🎉 Уровень пройден!';
+    badge.classList.add('show');
+    setTimeout(() => {
+      badge.classList.remove('show');
+      badge.textContent = `Уровень ${this.level}`;
+    }, 2000);
   }
 
   addTiles() {
-    // Добавить плитки
     this.audio.playClick();
   }
 
   reset() {
+    this.clearHint();
     this.startLevel(this.level);
     this.audio.playClick();
   }
 
   updateUI() {
     document.getElementById('scoreDisplay').textContent = this.score;
+    document.getElementById('targetDisplay').textContent = this.targetScore;
     document.getElementById('levelBadge').textContent = `Уровень ${this.level}`;
+    document.getElementById('comboDisplay').textContent = `x${this.multiplier.toFixed(1)}`;
     
     const progress = Math.min((this.score / this.targetScore) * 100, 100);
     document.getElementById('progressFill').style.width = progress + '%';
-    
-    const comboBadge = document.getElementById('comboBadge');
-    if (this.combo > 1) {
-      comboBadge.style.display = 'block';
-      comboBadge.textContent = `x${this.multiplier.toFixed(1)}`;
-    } else {
-      comboBadge.style.display = 'none';
-    }
   }
 
   update(dt) {
     this.board.update(dt);
+    this.particles.update(dt);
   }
 
   render() {
     this.board.render(this.ctx);
+    this.particles.render(this.ctx);
   }
 }
