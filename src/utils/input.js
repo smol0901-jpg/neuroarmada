@@ -1,5 +1,6 @@
 /**
  * InputManager - Управление вводом (мышь, тач, клавиатура)
+ * Поддержка tap, swipe, drag
  */
 
 export class InputManager {
@@ -8,7 +9,9 @@ export class InputManager {
     this.listeners = [];
     this.touchStart = null;
     this.isDragging = false;
-    this.dragThreshold = 10;
+    this.dragThreshold = 15; // Порог для определения свайпа
+    this.tapTimeout = null;
+    this.tapDelay = 200; // Макс время для тапа
     
     this.setupMouse();
     this.setupTouch();
@@ -39,6 +42,11 @@ export class InputManager {
       e.preventDefault();
       this.onPointerUp(this.touchStart);
     }, { passive: false });
+    
+    this.canvas.addEventListener('touchcancel', (e) => {
+      this.isDragging = false;
+      this.touchStart = null;
+    });
   }
 
   setupKeyboard() {
@@ -49,6 +57,10 @@ export class InputManager {
         this.emit('hint');
       } else if (e.key === 'Escape') {
         this.emit('escape');
+      } else if (e.key === 'm' || e.key === 'ь') {
+        this.emit('music');
+      } else if (e.key === 's' || e.key === 'ы') {
+        this.emit('sound');
       }
     });
   }
@@ -71,7 +83,8 @@ export class InputManager {
     this.touchStart = { x, y, time: Date.now() };
     this.isDragging = true;
     
-    this.emit('tap', { x, y });
+    // Создаём ripple эффект
+    this.createRipple(e.clientX, e.clientY);
   }
 
   onPointerMove(e) {
@@ -86,7 +99,7 @@ export class InputManager {
     const dist = Math.sqrt(dx * dx + dy * dy);
     
     if (dist > this.dragThreshold) {
-      // Свайп
+      // Это свайп - определяем направление
       let dir = '';
       if (Math.abs(dx) > Math.abs(dy)) {
         dir = dx > 0 ? 'right' : 'left';
@@ -94,26 +107,38 @@ export class InputManager {
         dir = dy > 0 ? 'down' : 'up';
       }
       
-      this.emit('swipe', { x, y, direction: dir });
-      this.isDragging = false;
+      this.emit('swipe', { x, y, direction: dir, dx, dy });
+      this.isDragging = false; // Свайп обработан
     }
   }
 
   onPointerUp(e) {
-    if (this.isDragging && this.touchStart) {
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      // Проверка длительности - короткий тап
-      const duration = Date.now() - this.touchStart.time;
-      if (duration < 200) {
-        this.emit('tap', { x, y });
-      }
+    if (!this.touchStart) return;
+    
+    const duration = Date.now() - this.touchStart.time;
+    
+    // Если это был короткий тап - отправляем как tap
+    if (duration < this.tapDelay && this.isDragging) {
+      this.emit('tap', { 
+        x: this.touchStart.x, 
+        y: this.touchStart.y 
+      });
     }
     
     this.isDragging = false;
     this.touchStart = null;
+  }
+
+  createRipple(x, y) {
+    const ripple = document.createElement('div');
+    ripple.className = 'touch-ripple';
+    ripple.style.left = (x - 25) + 'px';
+    ripple.style.top = (y - 25) + 'px';
+    ripple.style.width = '50px';
+    ripple.style.height = '50px';
+    document.body.appendChild(ripple);
+    
+    setTimeout(() => ripple.remove(), 600);
   }
 
   on(event, callback) {
