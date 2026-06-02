@@ -2,8 +2,10 @@
  * Main - Точка входа приложения
  */
 
+
 import { Game } from './core/game.js';
 import { StorageManager } from './core/storage.js';
+import { InputManager } from './utils/input.js';
 
 class App {
   constructor() {
@@ -12,6 +14,7 @@ class App {
     
     this.storage = new StorageManager();
     this.game = new Game(this.ctx, this.storage);
+    this.input = new InputManager(this.canvas);
     
     this.lastTime = 0;
     this.isRunning = false;
@@ -40,7 +43,7 @@ class App {
     const width = window.innerWidth;
     const height = window.innerHeight;
     
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = width * dpr;
     this.canvas.height = height * dpr;
     this.canvas.style.width = width + 'px';
@@ -51,22 +54,23 @@ class App {
   }
 
   setupInput() {
-    this.canvas.addEventListener('click', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+    this.input.on('tap', ({ x, y }) => {
       this.game.onInput(x, y);
     });
     
-    this.canvas.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      const touch = e.touches[0];
-      const rect = this.canvas.getBoundingClientRect();
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
-      this.game.onInput(x, y);
-    }, { passive: false });
+    this.input.on('swipe', ({ x, y, direction }) => {
+      // Можно использовать для свайпа плиток
+    });
+    
+    this.input.on('reset', () => {
+      this.game.reset();
+    });
+    
+    this.input.on('hint', () => {
+      this.game.showHint();
+    });
   }
+
 
   setupButtons() {
     const soundBtn = document.getElementById('soundBtn');
@@ -88,7 +92,50 @@ class App {
     document.getElementById('hintBtn').addEventListener('click', () => this.game.showHint());
     document.getElementById('addBtn').addEventListener('click', () => this.game.addTiles());
     document.getElementById('resetBtn').addEventListener('click', () => this.game.reset());
-    document.getElementById('settingsBtn').addEventListener('click', () => {});
+    document.getElementById('settingsBtn').addEventListener('click', () => {
+      this.showSettingsModal();
+    });
+  }
+
+  showSettingsModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h2>⚙️ Настройки</h2>
+        <div class="setting-row">
+          <span>🔊 Звук</span>
+          <button id="toggleSound">${this.storage.getSetting('sound') ? 'Вкл' : 'Выкл'}</button>
+        </div>
+        <div class="setting-row">
+          <span>🎵 Музыка</span>
+          <button id="toggleMusic">${this.storage.getSetting('music') ? 'Вкл' : 'Выкл'}</button>
+        </div>
+        <div class="setting-row">
+          <span>📊 Статистика</span>
+        </div>
+        <div class="stats">
+          <p>Игр сыграно: ${this.storage.data.player.gamesPlayed}</p>
+          <p>Рекорд: ${this.storage.data.player.highScore}</p>
+          <p>Уровней пройдено: ${this.storage.data.player.levelsCompleted}</p>
+        </div>
+        <button class="close-btn" id="closeModal">Закрыть</button>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('closeModal').onclick = () => modal.remove();
+    document.getElementById('toggleSound').onclick = () => {
+      const enabled = !this.storage.getSetting('sound');
+      this.storage.setSetting('sound', enabled);
+      document.getElementById('toggleSound').textContent = enabled ? 'Вкл' : 'Выкл';
+    };
+    document.getElementById('toggleMusic').onclick = () => {
+      const enabled = !this.storage.getSetting('music');
+      this.storage.setSetting('music', enabled);
+      document.getElementById('toggleMusic').textContent = enabled ? 'Вкл' : 'Выкл';
+    };
   }
 
   start() {
@@ -100,7 +147,7 @@ class App {
   loop(currentTime) {
     if (!this.isRunning) return;
     
-    const dt = (currentTime - this.lastTime) / 1000;
+    const dt = Math.min((currentTime - this.lastTime) / 1000, 0.1);
     this.lastTime = currentTime;
     
     this.ctx.fillStyle = '#0f0f1a';
