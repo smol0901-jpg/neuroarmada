@@ -21,9 +21,6 @@ export class Game {
     this.audio = new AudioManager();
     this.particles = new ParticleSystem();
     
-    this.worker = null;
-    this.initWorker();
-    
     this.state = 'playing';
     this.level = 1;
     this.score = 0;
@@ -44,42 +41,8 @@ export class Game {
     // Для свайпов
     this.swipeStart = null;
     
-    // Ожидание ответа от worker
+    // Ожидание ответа
     this.pendingSwap = null;
-  }
-
-  initWorker() {
-    try {
-      // Используем относительный путь для GitHub Pages
-      const workerPath = BASE_PATH + '/src/workers/matchWorker.js';
-      this.worker = new Worker(workerPath, { type: 'module' });
-      this.worker.onmessage = (e) => this.handleWorkerMessage(e.data);
-    } catch (e) {
-      console.warn('Worker not available, using fallback');
-    }
-  }
-
-  handleWorkerMessage(data) {
-    switch (data.type) {
-      case 'matches':
-        if (data.matches.length > 0) {
-          this.processMatches(data.matches);
-        } else {
-          // Нет матчей - возвращаем обратно
-          this.undoSwap();
-        }
-        break;
-      case 'validMoves':
-        if (!data.hasMoves && this.state === 'playing') {
-          this.shuffleBoard();
-        }
-        break;
-      case 'bestMove':
-        if (data.bestMove) {
-          this.showHintMove(data.bestMove);
-        }
-        break;
-    }
   }
 
   resize(width, height) {
@@ -161,7 +124,7 @@ export class Game {
       targetRow += dy > 0 ? 1 : -1;
     }
     
-    const targetTile = this.board.getTileAtPosition(targetRow, targetCol);
+    const targetTile = this.getTileAtPosition(targetRow, targetCol);
     if (targetTile && this.board.isAdjacent(
       this.selectedTile.row, this.selectedTile.col,
       targetRow, targetCol
@@ -172,6 +135,7 @@ export class Game {
 
   async attemptSwap(tile1, tile2) {
     this.isAnimating = true;
+    this.isProcessing = true;
     this.board.clearHighlight();
     
     // Сохраняем для отката
@@ -180,21 +144,15 @@ export class Game {
     // Анимация обмена
     await this.board.animateSwap(tile1, tile2);
     
-    if (this.worker) {
-      // Отправляем в worker и ждём ответа
-      this.isProcessing = true;
-      this.worker.postMessage({
-        type: 'findMatches',
-        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
-      });
+    // Синхронная проверка матчей через matchFinder
+    const matches = this.matchFinder.findMatches();
+    
+    if (matches.length > 0) {
+      // Есть матчи - обрабатываем
+      await this.processMatches(matches);
     } else {
-      // Fallback - синхронная проверка
-      const matches = this.matchFinder.findMatches();
-      if (matches.length > 0) {
-        this.processMatches(matches);
-      } else {
-        this.undoSwap();
-      }
+      // Нет матчей - возвращаем обратно
+      await this.undoSwap();
     }
     
     this.selectedTile = null;
@@ -244,30 +202,21 @@ export class Game {
     await this.board.fillEmpty();
     
     // Рекурсивная проверка новых матчей
-    if (this.worker) {
-      this.isProcessing = true;
-      this.worker.postMessage({
-        type: 'findMatches',
-        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
-      });
+    const newMatches = this.matchFinder.findMatches();
+    if (newMatches.length > 0) {
+      await this.processMatches(newMatches);
     } else {
-      const newMatches = this.matchFinder.findMatches();
-      if (newMatches.length > 0) {
-        await this.processMatches(newMatches);
-      } else {
-        this.checkLevelComplete();
-      }
+      this.checkLevelComplete();
     }
     
     this.updateUI();
   }
 
   checkValidMoves() {
-    if (this.worker) {
-      this.worker.postMessage({
-        type: 'hasValidMoves',
-        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
-      });
+    // Проверяем есть ли допустимые ходы
+    const hasMoves = this.matchFinder.hasValidMoves();
+    if (!hasMoves) {
+      this.shuffleBoard();
     }
   }
 
@@ -286,7 +235,6 @@ export class Game {
   }
 
   showLevelComplete() {
-    // Показ экрана завершения уровня
     this.state = 'levelComplete';
   }
 
@@ -329,7 +277,6 @@ export class Game {
   }
 
   updateUI() {
-    // Обновление UI через storage
     if (this.storage && this.storage.updateScore) {
       this.storage.updateScore(this.score, this.targetScore);
     }
