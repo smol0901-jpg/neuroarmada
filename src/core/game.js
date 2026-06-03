@@ -43,6 +43,9 @@ export class Game {
     
     // Для свайпов
     this.swipeStart = null;
+    
+    // Ожидание ответа от worker
+    this.pendingSwap = null;
   }
 
   initWorker() {
@@ -59,8 +62,11 @@ export class Game {
   handleWorkerMessage(data) {
     switch (data.type) {
       case 'matches':
-        if (data.matches.length > 0 && !this.isProcessing) {
+        if (data.matches.length > 0) {
           this.processMatches(data.matches);
+        } else {
+          // Нет матчей - возвращаем обратно
+          this.undoSwap();
         }
         break;
       case 'validMoves':
@@ -168,30 +174,54 @@ export class Game {
     this.isAnimating = true;
     this.board.clearHighlight();
     
+    // Сохраняем для отката
+    this.pendingSwap = { tile1, tile2 };
+    
+    // Анимация обмена
     await this.board.animateSwap(tile1, tile2);
     
     if (this.worker) {
+      // Отправляем в worker и ждём ответа
       this.isProcessing = true;
       this.worker.postMessage({
         type: 'findMatches',
         data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
       });
     } else {
+      // Fallback - синхронная проверка
       const matches = this.matchFinder.findMatches();
       if (matches.length > 0) {
         this.processMatches(matches);
       } else {
-        await this.board.animateSwap(tile1, tile2);
-        this.audio.playError();
+        this.undoSwap();
       }
     }
     
     this.selectedTile = null;
   }
 
+  async undoSwap() {
+    if (!this.pendingSwap) {
+      this.isAnimating = false;
+      this.isProcessing = false;
+      return;
+    }
+    
+    const { tile1, tile2 } = this.pendingSwap;
+    
+    // Анимация возврата
+    await this.board.animateSwap(tile1, tile2);
+    
+    this.audio.playError();
+    this.isAnimating = false;
+    this.isProcessing = false;
+    this.pendingSwap = null;
+  }
+
   async processMatches(matches) {
     this.isProcessing = false;
     this.isAnimating = true;
+    this.pendingSwap = null;
     
     let matchScore = 0;
     for (const match of matches) {
@@ -213,6 +243,7 @@ export class Game {
     await this.board.dropTiles();
     await this.board.fillEmpty();
     
+    // Рекурсивная проверка новых матчей
     if (this.worker) {
       this.isProcessing = true;
       this.worker.postMessage({
@@ -242,90 +273,72 @@ export class Game {
 
   checkLevelComplete() {
     this.isAnimating = false;
+    this.isProcessing = false;
     
     if (this.score >= this.targetScore) {
       this.audio.playWin();
       this.level++;
       this.storage.completeLevel(this.level - 1);
       this.showLevelComplete();
-      setTimeout(() => this.startLevel(this.level), 2500);
     } else {
       this.checkValidMoves();
     }
   }
 
-  shuffleBoard() {
-    this.audio.playShuffle();
-    this.board.generateBoard(this.level);
-    this.checkValidMoves();
+  showLevelComplete() {
+    // Показ экрана завершения уровня
+    this.state = 'levelComplete';
   }
 
-  showHint() {
-    if (this.worker) {
-      this.worker.postMessage({
-        type: 'findBestMove',
-        data: { grid: this.board.grid, rows: this.board.rows, cols: this.board.cols }
-      });
+  showCombo() {
+    if (this.combo > 1) {
+      this.particles.emit('combo', this.width / 2, this.height / 2, this.combo);
     }
   }
 
-  showHintMove(move) {
-    this.hintTile = move.from;
-    this.board.highlightTile({ row: move.from.row, col: move.from.col });
+  showHintMove(bestMove) {
+    this.clearHint();
     
-    if (this.hintTimeout) clearTimeout(this.hintTimeout);
+    this.hintTile = {
+      row: bestMove.fromRow,
+      col: bestMove.fromCol
+    };
+    
+    this.board.highlightTile(this.hintTile);
+    
     this.hintTimeout = setTimeout(() => {
       this.clearHint();
     }, 3000);
   }
 
   clearHint() {
-    this.board.clearHighlight();
-    this.hintTile = null;
+    if (this.hintTile) {
+      this.board.clearHighlight();
+      this.hintTile = null;
+    }
     if (this.hintTimeout) {
       clearTimeout(this.hintTimeout);
       this.hintTimeout = null;
     }
   }
 
-  showCombo() {
-    const badge = document.getElementById('comboBadge');
-    if (this.combo > 1) {
-      badge.textContent = `x${this.multiplier.toFixed(1)}`;
-      badge.classList.add('show');
-      this.audio.playCombo();
-      setTimeout(() => badge.classList.remove('show'), 600);
-    }
-  }
-
-  showLevelComplete() {
-    const badge = document.getElementById('levelBadge');
-    badge.textContent = '🎉 Уровень пройден!';
-    badge.classList.add('show');
-    setTimeout(() => {
-      badge.classList.remove('show');
-      badge.textContent = `Уровень ${this.level}`;
-    }, 2000);
-  }
-
-  addTiles() {
-    this.audio.playClick();
-  }
-
-  reset() {
-    this.clearHint();
-    this.startLevel(this.level);
-    this.audio.playClick();
+  shuffleBoard() {
+    this.board.shuffle();
+    this.audio.playShuffle();
+    this.checkValidMoves();
   }
 
   updateUI() {
-    document.getElementById('scoreDisplay').textContent = this.score;
-    document.getElementById('targetDisplay').textContent = this.targetScore;
-    document.getElementById('levelBadge').textContent = `Уровень ${this.level}`;
-    document.getElementById('comboDisplay').textContent = `x${this.multiplier.toFixed(1)}`;
-    
-    const progress = Math.min((this.score / this.targetScore) * 100, 100);
-    document.getElementById('progressFill').style.width = progress + '%';
+    // Обновление UI через storage
+    if (this.storage && this.storage.updateScore) {
+      this.storage.updateScore(this.score, this.targetScore);
+    }
+    if (this.storage && this.storage.updateLevel) {
+      this.storage.updateLevel(this.level);
+    }
+    if (this.storage && this.storage.updateCombo) {
+      this.storage.updateCombo(this.combo);
+    }
   }
 
   update(dt) {
@@ -333,8 +346,15 @@ export class Game {
     this.particles.update(dt);
   }
 
-  render() {
-    this.board.render(this.ctx);
-    this.particles.render(this.ctx);
+  render(ctx) {
+    this.board.render(ctx);
+    this.particles.render(ctx);
+  }
+
+  getTileAtPosition(row, col) {
+    if (row < 0 || row >= this.board.rows || col < 0 || col >= this.board.cols) {
+      return null;
+    }
+    return { row, col, tile: this.board.grid[row][col] };
   }
 }
