@@ -9,7 +9,6 @@ export class MatchFinder {
 
   findMatches() {
     const matches = [];
-    const visited = new Set();
     
     // Горизонтальные совпадения
     for (let r = 0; r < this.board.rows; r++) {
@@ -66,11 +65,9 @@ export class MatchFinder {
     
     const matches = [];
     
-    // Горизонталь
     const hMatch = this.findHorizontalMatch(row, col, type);
     if (hMatch.length >= 3) matches.push(hMatch);
     
-    // Вертикаль
     const vMatch = this.findVerticalMatch(row, col, type);
     if (vMatch.length >= 3) matches.push(vMatch);
     
@@ -80,14 +77,12 @@ export class MatchFinder {
   findHorizontalMatch(row, col, type) {
     const positions = [{ row, col }];
     
-    // Влево
     for (let c = col - 1; c >= 0; c--) {
       if (this.board.grid[row][c]?.type === type) {
         positions.unshift({ row, col: c });
       } else break;
     }
     
-    // Вправо
     for (let c = col + 1; c < this.board.cols; c++) {
       if (this.board.grid[row][c]?.type === type) {
         positions.push({ row, col: c });
@@ -100,14 +95,12 @@ export class MatchFinder {
   findVerticalMatch(row, col, type) {
     const positions = [{ row, col }];
     
-    // Вверх
     for (let r = row - 1; r >= 0; r--) {
       if (this.board.grid[r][col]?.type === type) {
         positions.unshift({ row: r, col });
       } else break;
     }
     
-    // Вниз
     for (let r = row + 1; r < this.board.rows; r++) {
       if (this.board.grid[r][col]?.type === type) {
         positions.push({ row: r, col });
@@ -120,7 +113,6 @@ export class MatchFinder {
   hasValidMoves() {
     for (let r = 0; r < this.board.rows; r++) {
       for (let c = 0; c < this.board.cols; c++) {
-        // Проверка соседей
         const neighbors = [
           { r: r - 1, c },
           { r: r + 1, c },
@@ -131,7 +123,6 @@ export class MatchFinder {
         for (const n of neighbors) {
           if (n.r >= 0 && n.r < this.board.rows && 
               n.c >= 0 && n.c < this.board.cols) {
-            // Временный обмен
             this.swapTiles(r, c, n.r, n.c);
             const matches = this.findMatches();
             this.swapTiles(r, c, n.r, n.c);
@@ -142,6 +133,54 @@ export class MatchFinder {
       }
     }
     return false;
+  }
+
+  findBestMove() {
+    let bestScore = 0;
+    let bestMove = null;
+    
+    for (let r = 0; r < this.board.rows; r++) {
+      for (let c = 0; c < this.board.cols; c++) {
+        const neighbors = [
+          { r: r - 1, c },
+          { r: r + 1, c },
+          { r, c: c - 1 },
+          { r, c: c + 1 }
+        ];
+        
+        for (const n of neighbors) {
+          if (n.r >= 0 && n.r < this.board.rows && 
+              n.c >= 0 && n.c < this.board.cols) {
+            this.swapTiles(r, c, n.r, n.c);
+            const matches = this.findMatches();
+            const score = this.calculateScore(matches);
+            this.swapTiles(r, c, n.r, n.c);
+            
+            if (score > bestScore) {
+              bestScore = score;
+              bestMove = {
+                fromRow: r,
+                fromCol: c,
+                toRow: n.r,
+                toCol: n.c,
+                score
+              };
+            }
+          }
+        }
+      }
+    }
+    
+    return bestMove;
+  }
+
+  calculateScore(matches) {
+    let score = 0;
+    for (const m of matches) {
+      score += m.length * 10;
+      if (m.length > 3) score += (m.length - 3) * 20;
+    }
+    return score;
   }
 
   swapTiles(r1, c1, r2, c2) {
