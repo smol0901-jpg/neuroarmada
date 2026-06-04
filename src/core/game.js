@@ -8,9 +8,6 @@ import { MatchFinder } from './match.js';
 import { AudioManager } from '../systems/audio/AudioManager.js';
 import { ParticleSystem } from '../systems/particles/ParticleSystem.js';
 
-// Определяем базовый путь для хостинга
-const BASE_PATH = '/neuroarmada';
-
 export class Game {
   constructor(ctx, storage) {
     this.ctx = ctx;
@@ -21,7 +18,7 @@ export class Game {
     this.audio = new AudioManager();
     this.particles = new ParticleSystem();
     
-    this.state = 'playing';
+    this.state = 'playing'; // playing, animating, levelComplete, gameOver
     this.level = 1;
     this.score = 0;
     this.targetScore = 100;
@@ -38,11 +35,11 @@ export class Game {
     this.hintTile = null;
     this.hintTimeout = null;
     
-    // Для свайпов
-    this.swipeStart = null;
-    
-    // Ожидание ответа
     this.pendingSwap = null;
+    
+    // Защита от бесконечного цикла
+    this.shuffleCount = 0;
+    this.maxShuffles = 3;
   }
 
   resize(width, height) {
@@ -53,19 +50,50 @@ export class Game {
   }
 
   startLevel(level) {
+    console.log('Starting level:', level);
+    
     this.level = level;
     this.score = 0;
     this.combo = 0;
     this.multiplier = 1;
     this.targetScore = level * 120 + 80;
+    this.shuffleCount = 0;
+    this.state = 'playing';
     
     this.board.generateBoard(level);
     this.updateUI();
+    
+    // Проверяем есть ли матчи после генерации
+    const matches = this.matchFinder.findMatches();
+    if (matches.length > 0) {
+      // Убираем начальные матчи
+      this.processInitialMatches();
+    } else {
+      // Проверяем допустимые ходы
+      this.checkValidMoves();
+    }
+  }
+
+  async processInitialMatches() {
+    this.isProcessing = true;
+    
+    let matches = this.matchFinder.findMatches();
+    while (matches.length > 0) {
+      await this.board.removeTiles(matches);
+      await this.board.dropTiles();
+      await this.board.fillEmpty();
+      matches = this.matchFinder.findMatches();
+    }
+    
+    this.isProcessing = false;
     this.checkValidMoves();
   }
 
   onInput(x, y, type = 'tap') {
-    if (this.state !== 'playing' || this.isAnimating) return;
+    if (this.state !== 'playing' || this.isAnimating || this.isProcessing) {
+      console.log('Input blocked, state:', this.state, 'animating:', this.isAnimating);
+      return;
+    }
     
     const tile = this.board.getTileAt(x, y);
     if (!tile) return;
@@ -138,20 +166,15 @@ export class Game {
     this.isProcessing = true;
     this.board.clearHighlight();
     
-    // Сохраняем для отката
     this.pendingSwap = { tile1, tile2 };
     
-    // Анимация обмена
     await this.board.animateSwap(tile1, tile2);
     
-    // Синхронная проверка матчей через matchFinder
     const matches = this.matchFinder.findMatches();
     
     if (matches.length > 0) {
-      // Есть матчи - обрабатываем
       await this.processMatches(matches);
     } else {
-      // Нет матчей - возвращаем обратно
       await this.undoSwap();
     }
     
@@ -166,8 +189,6 @@ export class Game {
     }
     
     const { tile1, tile2 } = this.pendingSwap;
-    
-    // Анимация возврата
     await this.board.animateSwap(tile1, tile2);
     
     this.audio.playError();
@@ -177,7 +198,7 @@ export class Game {
   }
 
   async processMatches(matches) {
-    this.isProcessing = false;
+    this.isProcessing = true;
     this.isAnimating = true;
     this.pendingSwap = null;
     
@@ -196,6 +217,7 @@ export class Game {
     
     this.audio.playMatch();
     this.showCombo();
+    this.updateUI();
     
     await this.board.removeTiles(matches);
     await this.board.dropTiles();
@@ -208,39 +230,78 @@ export class Game {
     } else {
       this.checkLevelComplete();
     }
-    
-    this.updateUI();
   }
 
   checkValidMoves() {
-    // Проверяем есть ли допустимые ходы
+    if (this.shuffleCount >= this.maxShuffles) {
+      console.log('Max shuffles reached, forcing level complete');
+      this.score = this.targetScore; // Даём достаточно очков
+      this.checkLevelComplete();
+      return;
+    }
+    
     const hasMoves = this.matchFinder.hasValidMoves();
     if (!hasMoves) {
+      console.log('No valid moves, shuffling');
       this.shuffleBoard();
+    } else {
+      this.isProcessing = false;
+      this.isAnimating = false;
     }
   }
 
   checkLevelComplete() {
+    console.log('Checking level complete, score:', this.score, 'target:', this.targetScore);
+    
     this.isAnimating = false;
     this.isProcessing = false;
     
     if (this.score >= this.targetScore) {
+      this.state = 'levelComplete';
       this.audio.playWin();
-      this.level++;
-      this.storage.completeLevel(this.level - 1);
+      
+      // Сохраняем прогресс
+      this.storage.completeLevel(this.level);
+      
+      // Показываем экран уровня
       this.showLevelComplete();
     } else {
-      this.checkValidMoves();
+      // Проверяем допустимые ходы
+      setTimeout(() => this.checkValidMoves(), 100);
     }
   }
 
   showLevelComplete() {
-    this.state = 'levelComplete';
+    // Создаём модальное окно
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h2>🎉 Уровень ${this.level} пройден!</h2>
+        <p style="text-align: center; margin-bottom: 20px;">
+          Очки: <strong>${this.score}</strong> / ${this.targetScore}
+        </p>
+        <button class="game-btn primary" id="nextLevelBtn">
+          Следующий уровень →
+        </button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    
+    document.getElementById('nextLevelBtn').addEventListener('click', () => {
+      modal.remove();
+      this.startLevel(this.level + 1);
+    });
   }
 
   showCombo() {
     if (this.combo > 1) {
-      this.particles.emit('combo', this.width / 2, this.height / 2, this.combo);
+      const comboEl = document.querySelector('.combo-badge');
+      if (comboEl) {
+        comboEl.textContent = `x${this.combo}`;
+        comboEl.classList.add('show');
+        setTimeout(() => comboEl.classList.remove('show'), 600);
+      }
     }
   }
 
@@ -271,26 +332,50 @@ export class Game {
   }
 
   shuffleBoard() {
+    this.shuffleCount++;
+    console.log('Shuffle #', this.shuffleCount);
+    
     this.board.shuffle();
     this.audio.playShuffle();
-    this.checkValidMoves();
+    
+    // Проверяем что после перемешивания есть ходы
+    setTimeout(() => {
+      this.checkValidMoves();
+    }, 300);
   }
 
   updateUI() {
-    if (this.storage && this.storage.updateScore) {
-      this.storage.updateScore(this.score, this.targetScore);
+    console.log('Update UI - Score:', this.score, 'Target:', this.targetScore, 'Level:', this.level);
+    
+    // Обновляем очки
+    const scoreEl = document.querySelector('.info-value:not(.target):not(.combo)');
+    if (scoreEl) scoreEl.textContent = this.score;
+    
+    // Обновляем цель
+    const targetEl = document.querySelector('.info-value.target');
+    if (targetEl) targetEl.textContent = this.targetScore;
+    
+    // Обновляем прогресс
+    const progressFill = document.querySelector('.progress-fill');
+    if (progressFill) {
+      const percent = Math.min(100, (this.score / this.targetScore) * 100);
+      progressFill.style.width = percent + '%';
     }
-    if (this.storage && this.storage.updateLevel) {
-      this.storage.updateLevel(this.level);
-    }
-    if (this.storage && this.storage.updateCombo) {
-      this.storage.updateCombo(this.combo);
-    }
+    
+    // Обновляем комбо
+    const comboEl = document.querySelector('.info-value.combo');
+    if (comboEl) comboEl.textContent = `x${this.multiplier.toFixed(1)}`;
+    
+    // Обновляем уровень
+    const levelBadge = document.querySelector('.level-badge');
+    if (levelBadge) levelBadge.textContent = `🎯 Уровень ${this.level}`;
   }
 
   update(dt) {
-    this.board.update(dt);
-    this.particles.update(dt);
+    if (this.state === 'playing') {
+      this.board.update(dt);
+      this.particles.update(dt);
+    }
   }
 
   render(ctx) {
@@ -303,5 +388,22 @@ export class Game {
       return null;
     }
     return { row, col, tile: this.board.grid[row][col] };
+  }
+
+  // Методы для кнопок
+  reset() {
+    this.startLevel(this.level);
+  }
+  
+  showHint() {
+    // Найти лучший ход
+    const bestMove = this.matchFinder.findBestMove();
+    if (bestMove) {
+      this.showHintMove(bestMove);
+    }
+  }
+  
+  addTiles() {
+    // Добавить специальные плитки
   }
 }
