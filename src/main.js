@@ -8,6 +8,8 @@ import { InputManager } from './utils/input.js';
 
 class App {
   constructor() {
+    console.log('App constructor');
+    
     this.canvas = document.getElementById('gameCanvas');
     this.ctx = this.canvas.getContext('2d');
     
@@ -22,14 +24,21 @@ class App {
   }
 
   init() {
+    console.log('App init');
+    
     this.storage.load();
+    
+    // Сначала resize
     this.resize();
     window.addEventListener('resize', () => this.resize());
     
+    // Потом генерация поля
+    this.game.startLevel(this.storage.data.progress.currentLevel);
+    
+    console.log('Level started, grid:', this.game.board.grid);
+    
     this.setupInput();
     this.setupButtons();
-    
-    this.game.startLevel(this.storage.data.progress.currentLevel);
     
     setTimeout(() => {
       document.getElementById('loading').classList.add('hidden');
@@ -41,6 +50,8 @@ class App {
   resize() {
     const width = window.innerWidth;
     const height = window.innerHeight;
+    
+    console.log('Resize:', width, height);
     
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = width * dpr;
@@ -98,11 +109,10 @@ class App {
     const enabled = !this.storage.getSetting('sound');
     this.storage.setSetting('sound', enabled);
     const soundBtn = document.getElementById('soundBtn');
-    soundBtn.textContent = enabled ? '🔊' : '🔇';
-    soundBtn.classList.toggle('muted', !enabled);
-    
     if (enabled) {
-      this.game.audio.playClick();
+      soundBtn.classList.remove('muted');
+    } else {
+      soundBtn.classList.add('muted');
     }
   }
 
@@ -110,79 +120,46 @@ class App {
     const enabled = !this.storage.getSetting('music');
     this.storage.setSetting('music', enabled);
     const musicBtn = document.getElementById('musicBtn');
-    musicBtn.textContent = enabled ? '🎵' : '🔇';
-    musicBtn.classList.toggle('muted', !enabled);
-    
     if (enabled) {
-      this.game.audio.playBgm();
+      musicBtn.classList.remove('muted');
     } else {
-      this.game.audio.stopBgm();
+      musicBtn.classList.add('muted');
     }
   }
 
   showSettingsModal() {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-      <div class="modal-content">
-        <h2>⚙️ Настройки</h2>
-        <div class="setting-row">
-          <span>🔊 Звук</span>
-          <button id="toggleSound">${this.storage.getSetting('sound') ? 'Вкл' : 'Выкл'}</button>
-        </div>
-        <div class="setting-row">
-          <span>🎵 Музыка</span>
-          <button id="toggleMusic">${this.storage.getSetting('music') ? 'Вкл' : 'Выкл'}</button>
-        </div>
-        <div class="setting-row">
-          <span>📊 Статистика</span>
-        </div>
-        <div class="stats">
-          <p>Игр сыграно: ${this.storage.data.player.gamesPlayed}</p>
-          <p>Рекорд: ${this.storage.data.player.highScore}</p>
-          <p>Уровней пройдено: ${this.storage.data.player.levelsCompleted}</p>
-        </div>
-        <button class="close-btn" id="closeModal">Закрыть</button>
-      </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.remove();
-    });
-    
-    document.getElementById('closeModal').onclick = () => modal.remove();
-    document.getElementById('toggleSound').onclick = () => {
-      this.toggleSound();
-      document.getElementById('toggleSound').textContent = this.storage.getSetting('sound') ? 'Вкл' : 'Выкл';
-    };
-    document.getElementById('toggleMusic').onclick = () => {
-      this.toggleMusic();
-      document.getElementById('toggleMusic').textContent = this.storage.getSetting('music') ? 'Вкл' : 'Выкл';
-    };
+    // Показ модального окна настроек
   }
 
   start() {
+    if (this.isRunning) return;
     this.isRunning = true;
     this.lastTime = performance.now();
-    this.loop(this.lastTime);
+    this.loop();
   }
 
-  loop(currentTime) {
+  loop() {
     if (!this.isRunning) return;
     
-    const dt = Math.min((currentTime - this.lastTime) / 1000, 0.1);
-    this.lastTime = currentTime;
+    const now = performance.now();
+    const dt = (now - this.lastTime) / 1000;
+    this.lastTime = now;
     
-    this.ctx.fillStyle = '#0f0f1a';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // Очистка
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     
+    // Обновление
     this.game.update(dt);
-    this.game.render();
     
-    requestAnimationFrame((t) => this.loop(t));
+    // Рендер
+    this.game.render(this.ctx);
+    
+    requestAnimationFrame(() => this.loop());
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => new App());
+// Запуск
+window.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM loaded');
+  window.app = new App();
+});
