@@ -19,7 +19,7 @@ export class BoardManager extends EventEmitter {
     this.offsetX = 0;
     this.offsetY = 0;
     
-    this.tiles = []; // Визуальные элементы
+    this.tiles = [];
     this.animations = [];
     
     this.highlightedTile = null;
@@ -29,6 +29,8 @@ export class BoardManager extends EventEmitter {
   }
 
   resize(width, height) {
+    console.log('Board resize:', width, height);
+    
     // Вычисляем оптимальный размер плитки
     const maxWidth = width - 40;
     const maxHeight = height - 200;
@@ -40,36 +42,47 @@ export class BoardManager extends EventEmitter {
     
     this.tileSize = Math.max(40, Math.min(80, this.tileSize));
     
+    console.log('Tile size:', this.tileSize);
+    
     // Центрирование
-    this.offsetX = (width - this.cols * (this.tileSize + this.padding * 2)) / 2;
-    this.offsetY = (height - this.rows * (this.tileSize + this.padding * 2)) / 2 + 40;
+    const boardWidth = this.cols * (this.tileSize + this.padding * 2);
+    const boardHeight = this.rows * (this.tileSize + this.padding * 2);
+    
+    this.offsetX = (width - boardWidth) / 2;
+    this.offsetY = (height - boardHeight) / 2 + 20;
+    
+    console.log('Offset:', this.offsetX, this.offsetY);
   }
 
   generateBoard(level = 1) {
+    console.log('Generating board, level:', level);
     this.grid = [];
     
     // Генерация сетки
     for (let r = 0; r < this.rows; r++) {
       this.grid[r] = [];
       for (let c = 0; c < this.cols; c++) {
-        this.grid[r][c] = this.randomTile(r, c);
+        const tile = this.randomTile(r, c);
+        this.grid[r][c] = tile;
       }
     }
     
     // Убираем начальные совпадения
     this.removeInitialMatches();
+    
+    console.log('Grid generated, first tile:', this.grid[0]?.[0]);
   }
 
   randomTile(row, col) {
-    const types = [0, 1, 2, 3]; // 4 типа тигрят
+    const types = [0, 1, 2, 3];
     return {
       type: types[Math.floor(Math.random() * types.length)],
-      row,
-      col,
-      x: col, // Визуальная позиция X
-      y: row, // Визуальная позиция Y
-      targetX: col, // Целевая позиция X
-      targetY: row, // Целевая позиция Y
+      row: row,
+      col: col,
+      x: col,
+      y: row,
+      targetX: col,
+      targetY: row,
       scale: 1,
       alpha: 1,
       rotation: 0
@@ -78,11 +91,16 @@ export class BoardManager extends EventEmitter {
 
   removeInitialMatches() {
     let matches = true;
-    while (matches) {
+    let iterations = 0;
+    const maxIterations = 100;
+    
+    while (matches && iterations < maxIterations) {
       matches = false;
+      iterations++;
+      
       for (let r = 0; r < this.rows; r++) {
         for (let c = 0; c < this.cols; c++) {
-          // Проверка горизонтали
+          // Горизонталь
           if (c >= 2) {
             if (this.grid[r][c].type === this.grid[r][c-1].type &&
                 this.grid[r][c].type === this.grid[r][c-2].type) {
@@ -90,7 +108,7 @@ export class BoardManager extends EventEmitter {
               matches = true;
             }
           }
-          // Проверка вертикали
+          // Вертикаль
           if (r >= 2) {
             if (this.grid[r][c].type === this.grid[r-1][c].type &&
                 this.grid[r][c].type === this.grid[r-2][c].type) {
@@ -153,6 +171,8 @@ export class BoardManager extends EventEmitter {
     const tileA = this.grid[tile1.row][tile1.col];
     const tileB = this.grid[tile2.row][tile2.col];
     
+    if (!tileA || !tileB) return;
+    
     // Сохраняем стартовые позиции
     const startX1 = tileA.x;
     const startY1 = tileA.y;
@@ -210,7 +230,6 @@ export class BoardManager extends EventEmitter {
   }
 
   async removeTiles(matches) {
-    // Анимация исчезновения
     const duration = 300;
     const startTime = performance.now();
     
@@ -242,7 +261,6 @@ export class BoardManager extends EventEmitter {
         if (progress < 1) {
           requestAnimationFrame(animate);
         } else {
-          // Удаляем из сетки
           for (const match of matches) {
             for (const pos of match.positions) {
               this.grid[pos.row][pos.col] = null;
@@ -266,7 +284,6 @@ export class BoardManager extends EventEmitter {
       for (let r = this.rows - 1; r >= 0; r--) {
         if (this.grid[r][c] !== null) {
           if (r !== emptyRow) {
-            // Перемещаем плитку
             this.grid[emptyRow][c] = this.grid[r][c];
             this.grid[emptyRow][c].row = emptyRow;
             this.grid[emptyRow][c].targetY = emptyRow;
@@ -277,14 +294,12 @@ export class BoardManager extends EventEmitter {
       }
     }
     
-    // Ждём завершения анимации
     await new Promise(resolve => {
       const animate = (currentTime) => {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const eased = 1 - Math.pow(1 - progress, 3);
         
-        // Обновляем визуальные позиции
         for (let r = 0; r < this.rows; r++) {
           for (let c = 0; c < this.cols; c++) {
             const tile = this.grid[r][c];
@@ -297,7 +312,6 @@ export class BoardManager extends EventEmitter {
         if (progress < 1) {
           requestAnimationFrame(animate);
         } else {
-          // Фиксируем позиции
           for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
               const tile = this.grid[r][c];
@@ -319,16 +333,14 @@ export class BoardManager extends EventEmitter {
     for (let c = 0; c < this.cols; c++) {
       for (let r = 0; r < this.rows; r++) {
         if (this.grid[r][c] === null) {
-          // Создаём новую плитку
           const newTile = this.randomTile(r, c);
-          newTile.y = -1 - (this.rows - r); // Начинаем сверху
+          newTile.y = -1 - (this.rows - r);
           newTile.targetY = r;
           this.grid[r][c] = newTile;
         }
       }
     }
     
-    // Анимация появления
     const startTime = performance.now();
     
     await new Promise(resolve => {
@@ -367,12 +379,10 @@ export class BoardManager extends EventEmitter {
   }
 
   update(dt) {
-    // Обновление анимаций
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         const tile = this.grid[r][c];
         if (tile) {
-          // Плавное движение к целевой позиции
           if (Math.abs(tile.x - tile.targetX) > 0.01) {
             tile.x += (tile.targetX - tile.x) * 0.15;
           }
@@ -385,27 +395,67 @@ export class BoardManager extends EventEmitter {
   }
 
   render(ctx) {
+    // Рисуем фон поля
+    const boardWidth = this.cols * (this.tileSize + this.padding * 2);
+    const boardHeight = this.rows * (this.tileSize + this.padding * 2);
+    
+    ctx.fillStyle = 'rgba(26, 26, 46, 0.5)';
+    ctx.beginPath();
+    ctx.roundRect(this.offsetX - 10, this.offsetY - 10, 
+                 boardWidth + 20, boardHeight + 20, 16);
+    ctx.fill();
+    
+    // Рисуем плитки
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         const tile = this.grid[r][c];
         if (!tile) continue;
         
-        // Получаем позицию на основе визуальных координат
-        const pos = this.getTilePosition(tile.y, tile.x);
+        // Используем визуальные координаты для позиции
+        const visualX = tile.x !== undefined ? tile.x : c;
+        const visualY = tile.y !== undefined ? tile.y : r;
+        
+        const pos = this.getTilePosition(visualY, visualX);
         
         ctx.save();
         ctx.translate(pos.x, pos.y);
-        ctx.scale(tile.scale, tile.scale);
-        ctx.globalAlpha = tile.alpha;
+        ctx.scale(tile.scale || 1, tile.scale || 1);
+        ctx.globalAlpha = tile.alpha || 1;
         
-        // Отрисовка плитки
-        this.tigerRenderer.render(ctx, tile.type, this.tileSize, {
-          highlighted: this.highlightedTile && 
-            this.highlightedTile.row === r && 
-            this.highlightedTile.col === c
-        });
+        this.tigerRenderer.render(ctx, tile.type, this.tileSize);
         
         ctx.restore();
+      }
+    }
+  }
+
+  shuffle() {
+    // Перемешивание всех плиток
+    const allTiles = [];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        allTiles.push(this.grid[r][c]);
+      }
+    }
+    
+    // Перемешиваем
+    for (let i = allTiles.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allTiles[i], allTiles[j]] = [allTiles[j], allTiles[i]];
+    }
+    
+    // Распределяем обратно
+    let idx = 0;
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        allTiles[idx].row = r;
+        allTiles[idx].col = c;
+        allTiles[idx].x = c;
+        allTiles[idx].y = r;
+        allTiles[idx].targetX = c;
+        allTiles[idx].targetY = r;
+        this.grid[r][c] = allTiles[idx];
+        idx++;
       }
     }
   }
