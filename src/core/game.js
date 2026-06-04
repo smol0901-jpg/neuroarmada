@@ -18,7 +18,7 @@ export class Game {
     this.audio = new AudioManager();
     this.particles = new ParticleSystem();
     
-    this.state = 'playing'; // playing, animating, levelComplete, gameOver
+    this.state = 'playing';
     this.level = 1;
     this.score = 0;
     this.targetScore = 100;
@@ -36,10 +36,10 @@ export class Game {
     this.hintTimeout = null;
     
     this.pendingSwap = null;
-    
-    // Защита от бесконечного цикла
     this.shuffleCount = 0;
     this.maxShuffles = 3;
+    
+    this.musicStarted = false;
   }
 
   resize(width, height) {
@@ -63,13 +63,17 @@ export class Game {
     this.board.generateBoard(level);
     this.updateUI();
     
-    // Проверяем есть ли матчи после генерации
+    // Запускаем музыку при первом уровне
+    if (!this.musicStarted) {
+      this.musicStarted = true;
+      this.audio.init();
+      this.audio.playBgm();
+    }
+    
     const matches = this.matchFinder.findMatches();
     if (matches.length > 0) {
-      // Убираем начальные матчи
       this.processInitialMatches();
     } else {
-      // Проверяем допустимые ходы
       this.checkValidMoves();
     }
   }
@@ -91,7 +95,6 @@ export class Game {
 
   onInput(x, y, type = 'tap') {
     if (this.state !== 'playing' || this.isAnimating || this.isProcessing) {
-      console.log('Input blocked, state:', this.state, 'animating:', this.isAnimating);
       return;
     }
     
@@ -223,7 +226,6 @@ export class Game {
     await this.board.dropTiles();
     await this.board.fillEmpty();
     
-    // Рекурсивная проверка новых матчей
     const newMatches = this.matchFinder.findMatches();
     if (newMatches.length > 0) {
       await this.processMatches(newMatches);
@@ -234,8 +236,8 @@ export class Game {
 
   checkValidMoves() {
     if (this.shuffleCount >= this.maxShuffles) {
-      console.log('Max shuffles reached, forcing level complete');
-      this.score = this.targetScore; // Даём достаточно очков
+      console.log('Max shuffles reached');
+      this.score = this.targetScore;
       this.checkLevelComplete();
       return;
     }
@@ -251,7 +253,7 @@ export class Game {
   }
 
   checkLevelComplete() {
-    console.log('Checking level complete, score:', this.score, 'target:', this.targetScore);
+    console.log('Level check - score:', this.score, 'target:', this.targetScore);
     
     this.isAnimating = false;
     this.isProcessing = false;
@@ -259,20 +261,14 @@ export class Game {
     if (this.score >= this.targetScore) {
       this.state = 'levelComplete';
       this.audio.playWin();
-      
-      // Сохраняем прогресс
       this.storage.completeLevel(this.level);
-      
-      // Показываем экран уровня
       this.showLevelComplete();
     } else {
-      // Проверяем допустимые ходы
       setTimeout(() => this.checkValidMoves(), 100);
     }
   }
 
   showLevelComplete() {
-    // Создаём модальное окно
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.innerHTML = `
@@ -338,35 +334,29 @@ export class Game {
     this.board.shuffle();
     this.audio.playShuffle();
     
-    // Проверяем что после перемешивания есть ходы
     setTimeout(() => {
       this.checkValidMoves();
     }, 300);
   }
 
   updateUI() {
-    console.log('Update UI - Score:', this.score, 'Target:', this.targetScore, 'Level:', this.level);
+    console.log('UI - Score:', this.score, 'Target:', this.targetScore);
     
-    // Обновляем очки
     const scoreEl = document.querySelector('.info-value:not(.target):not(.combo)');
     if (scoreEl) scoreEl.textContent = this.score;
     
-    // Обновляем цель
     const targetEl = document.querySelector('.info-value.target');
     if (targetEl) targetEl.textContent = this.targetScore;
     
-    // Обновляем прогресс
     const progressFill = document.querySelector('.progress-fill');
     if (progressFill) {
       const percent = Math.min(100, (this.score / this.targetScore) * 100);
       progressFill.style.width = percent + '%';
     }
     
-    // Обновляем комбо
     const comboEl = document.querySelector('.info-value.combo');
     if (comboEl) comboEl.textContent = `x${this.multiplier.toFixed(1)}`;
     
-    // Обновляем уровень
     const levelBadge = document.querySelector('.level-badge');
     if (levelBadge) levelBadge.textContent = `🎯 Уровень ${this.level}`;
   }
@@ -390,13 +380,11 @@ export class Game {
     return { row, col, tile: this.board.grid[row][col] };
   }
 
-  // Методы для кнопок
   reset() {
     this.startLevel(this.level);
   }
   
   showHint() {
-    // Найти лучший ход
     const bestMove = this.matchFinder.findBestMove();
     if (bestMove) {
       this.showHintMove(bestMove);
