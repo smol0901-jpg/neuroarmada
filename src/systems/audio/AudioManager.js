@@ -1,13 +1,11 @@
 /**
  * AudioManager - Управление звуком и музыкой
- * Поддержка как синтеза, так и звуковых файлов
+ * Синтез звуков + поддержка файлов
  */
-
 
 import { EventEmitter } from '../../utils/eventemitter.js';
 
-// Базовая директория для GitHub Pages
-const BASE_PATH = '/neuroarmada';
+const BASE_PATH = '';
 
 export class AudioManager extends EventEmitter {
   constructor() {
@@ -30,7 +28,8 @@ export class AudioManager extends EventEmitter {
       win: 'win.mp3',
       shuffle: 'shuffle.mp3',
       select: 'select.mp3',
-      combo: 'combo.mp3'
+      combo: 'combo.mp3',
+      bonus: 'bonus.mp3'
     };
     
     this.bgmFiles = ['bgm1.mp3', 'bgm2.mp3', 'bgm3.mp3', 'bgm4.mp3'];
@@ -40,26 +39,36 @@ export class AudioManager extends EventEmitter {
   init() {
     if (this.ctx) return;
     
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    this.masterGain = this.ctx.createGain();
-    this.sfxGain = this.ctx.createGain();
-    this.bgmGain = this.ctx.createGain();
-    
-    this.sfxGain.gain.value = 0.4;
-    this.bgmGain.gain.value = 0.15;
-    
-    this.sfxGain.connect(this.masterGain);
-    this.bgmGain.connect(this.masterGain);
-    this.masterGain.connect(this.ctx.destination);
-    
-    this.masterGain.gain.value = 1;
-    
-    this.loadSounds();
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
+      
+      this.masterGain = this.ctx.createGain();
+      this.sfxGain = this.ctx.createGain();
+      this.bgmGain = this.ctx.createGain();
+      
+      this.sfxGain.gain.value = 0.4;
+      this.bgmGain.gain.value = 0.15;
+      
+      this.sfxGain.connect(this.masterGain);
+      this.bgmGain.connect(this.masterGain);
+      this.masterGain.connect(this.ctx.destination);
+      
+      this.masterGain.gain.value = 1;
+      
+      console.log('Audio initialized');
+    } catch (e) {
+      console.error('Audio init failed:', e);
+    }
   }
 
   async loadSounds() {
-    // Используем BASE_PATH для GitHub Pages
-    const basePath = BASE_PATH + '/assets/audio/';
+    if (!this.ctx) return;
+    
+    const basePath = BASE_PATH + 'assets/audio/';
     
     for (const [key, filename] of Object.entries(this.soundFiles)) {
       try {
@@ -110,6 +119,8 @@ export class AudioManager extends EventEmitter {
   }
 
   playSynthesis(key) {
+    if (!this.ctx) return;
+    
     switch (key) {
       case 'click':
         this.playTone(800, 0.1, 'sine');
@@ -139,23 +150,35 @@ export class AudioManager extends EventEmitter {
         setTimeout(() => this.playTone(554, 0.1, 'sine'), 80);
         setTimeout(() => this.playTone(659, 0.15, 'sine'), 160);
         break;
+      case 'bonus':
+        this.playTone(523, 0.15, 'sine');
+        setTimeout(() => this.playTone(659, 0.15, 'sine'), 100);
+        setTimeout(() => this.playTone(784, 0.15, 'sine'), 200);
+        setTimeout(() => this.playTone(1047, 0.3, 'sine'), 300);
+        break;
     }
   }
 
   playTone(freq, dur, type = 'sine', target = 'sfx') {
     if (!this.ctx || (target === 'sfx' && !this.enabled) || (target === 'bgm' && !this.musicEnabled)) return;
     
-    const osc = this.ctx.createOscillator();
-    const gain = target === 'bgm' ? this.bgmGain : this.sfxGain;
-    
-    osc.type = type;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(target === 'bgm' ? 0.2 : 0.3, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
-    
-    osc.connect(gain);
-    osc.start();
-    osc.stop(this.ctx.currentTime + dur);
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = target === 'bgm' ? this.bgmGain : this.sfxGain;
+      
+      osc.type = type;
+      osc.frequency.value = freq;
+      
+      const now = this.ctx.currentTime;
+      gain.gain.setValueAtTime(target === 'bgm' ? 0.2 : 0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      
+      osc.connect(gain);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) {
+      console.log('Tone play error:', e);
+    }
   }
 
   playClick() {
@@ -191,6 +214,11 @@ export class AudioManager extends EventEmitter {
   playCombo() {
     this.init();
     this.playSound('combo');
+  }
+
+  playBonus() {
+    this.init();
+    this.playSound('bonus');
   }
 
   playBgm() {
@@ -238,7 +266,9 @@ export class AudioManager extends EventEmitter {
   stopBgm() {
     this.isPlaying = false;
     if (this.activeSources.bgm) {
-      this.activeSources.bgm.stop();
+      try {
+        this.activeSources.bgm.stop();
+      } catch (e) {}
       this.activeSources.bgm = null;
     }
   }
