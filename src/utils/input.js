@@ -9,13 +9,18 @@ export class InputManager {
     this.listeners = [];
     this.touchStart = null;
     this.isDragging = false;
-    this.dragThreshold = 15; // Порог для определения свайпа
-    this.tapTimeout = null;
-    this.tapDelay = 200; // Макс время для тапа
+    this.dragThreshold = 15;
+    this.tapDelay = 200;
+    this.mode = 'tap';
     
     this.setupMouse();
     this.setupTouch();
     this.setupKeyboard();
+  }
+
+  setMode(mode) {
+    this.mode = mode;
+    console.log('Input mode:', mode);
   }
 
   setupMouse() {
@@ -83,7 +88,6 @@ export class InputManager {
     this.touchStart = { x, y, time: Date.now() };
     this.isDragging = true;
     
-    // Создаём ripple эффект
     this.createRipple(e.clientX, e.clientY);
   }
 
@@ -99,7 +103,6 @@ export class InputManager {
     const dist = Math.sqrt(dx * dx + dy * dy);
     
     if (dist > this.dragThreshold) {
-      // Это свайп - определяем направление
       let dir = '';
       if (Math.abs(dx) > Math.abs(dy)) {
         dir = dx > 0 ? 'right' : 'left';
@@ -108,7 +111,7 @@ export class InputManager {
       }
       
       this.emit('swipe', { x, y, direction: dir, dx, dy });
-      this.isDragging = false; // Свайп обработан
+      this.isDragging = false;
     }
   }
 
@@ -117,7 +120,6 @@ export class InputManager {
     
     const duration = Date.now() - this.touchStart.time;
     
-    // Если это был короткий тап - отправляем как tap
     if (duration < this.tapDelay && this.isDragging) {
       this.emit('tap', { 
         x: this.touchStart.x, 
