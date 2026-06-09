@@ -29,9 +29,11 @@ class App {
     
     this.storage.load();
     
+    // Сначала resize
     this.resize();
     window.addEventListener('resize', () => this.resize());
     
+    // Потом генерация поля
     this.game.startLevel(this.storage.data.progress.currentLevel);
     
     console.log('Level started, grid:', this.game.board.grid);
@@ -72,6 +74,7 @@ class App {
       if (this.audioStarted) return;
       this.audioStarted = true;
       
+      // Инициализируем звук после жеста пользователя
       this.game.initAudio();
       
       overlay.classList.add('hidden');
@@ -83,14 +86,17 @@ class App {
   }
 
   setupInput() {
+    // Тап (клик)
     this.input.on('tap', ({ x, y }) => {
       this.game.onInput(x, y, 'tap');
     });
     
+    // Свайп
     this.input.on('swipe', ({ x, y, direction, dx, dy }) => {
       this.game.onInput(x, y, 'swipe');
     });
     
+    // Клавиши
     this.input.on('reset', () => {
       this.game.reset();
     });
@@ -128,6 +134,7 @@ class App {
     const dragMode = document.getElementById('dragMode');
     const closeSettings = document.getElementById('closeSettings');
     
+    // Загружаем настройки
     const soundEnabled = this.storage.getSetting('sound');
     const musicEnabled = this.storage.getSetting('music');
     const controlMode = this.storage.getSetting('controlMode') || 'tap';
@@ -137,6 +144,7 @@ class App {
     tapMode.classList.toggle('active', controlMode === 'tap');
     dragMode.classList.toggle('active', controlMode === 'drag');
     
+    // Обработчики
     soundToggle.addEventListener('click', () => {
       soundToggle.classList.toggle('on');
       this.storage.setSetting('sound', soundToggle.classList.contains('on'));
@@ -208,16 +216,20 @@ class App {
     const dt = (now - this.lastTime) / 1000;
     this.lastTime = now;
     
+    // Очистка
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     
+    // Обновление
     this.game.update(dt);
     
+    // Рендер
     this.game.render(this.ctx);
     
     requestAnimationFrame(() => this.loop());
   }
 }
 
+// Запуск
 window.addEventListener('DOMContentLoaded', () => {
   console.log('DOM loaded');
   window.app = new App();
