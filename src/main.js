@@ -19,6 +19,7 @@ class App {
     
     this.lastTime = 0;
     this.isRunning = false;
+    this.audioStarted = false;
     
     this.init();
   }
@@ -28,17 +29,17 @@ class App {
     
     this.storage.load();
     
-    // Сначала resize
     this.resize();
     window.addEventListener('resize', () => this.resize());
     
-    // Потом генерация поля
     this.game.startLevel(this.storage.data.progress.currentLevel);
     
     console.log('Level started, grid:', this.game.board.grid);
     
     this.setupInput();
     this.setupButtons();
+    this.setupSettings();
+    this.setupStartOverlay();
     
     setTimeout(() => {
       document.getElementById('loading').classList.add('hidden');
@@ -63,18 +64,33 @@ class App {
     this.game.resize(width, height);
   }
 
+  setupStartOverlay() {
+    const overlay = document.getElementById('startOverlay');
+    const startBtn = document.getElementById('startBtn');
+    
+    const startGame = () => {
+      if (this.audioStarted) return;
+      this.audioStarted = true;
+      
+      this.game.initAudio();
+      
+      overlay.classList.add('hidden');
+    };
+    
+    startBtn.addEventListener('click', startGame);
+    startBtn.addEventListener('touchstart', startGame);
+    overlay.addEventListener('click', startGame);
+  }
+
   setupInput() {
-    // Тап (клик)
     this.input.on('tap', ({ x, y }) => {
       this.game.onInput(x, y, 'tap');
     });
     
-    // Свайп
     this.input.on('swipe', ({ x, y, direction, dx, dy }) => {
       this.game.onInput(x, y, 'swipe');
     });
     
-    // Клавиши
     this.input.on('reset', () => {
       this.game.reset();
     });
@@ -105,30 +121,77 @@ class App {
     document.getElementById('settingsBtn').addEventListener('click', () => this.showSettingsModal());
   }
 
+  setupSettings() {
+    const soundToggle = document.getElementById('soundToggle');
+    const musicToggle = document.getElementById('musicToggle');
+    const tapMode = document.getElementById('tapMode');
+    const dragMode = document.getElementById('dragMode');
+    const closeSettings = document.getElementById('closeSettings');
+    
+    const soundEnabled = this.storage.getSetting('sound');
+    const musicEnabled = this.storage.getSetting('music');
+    const controlMode = this.storage.getSetting('controlMode') || 'tap';
+    
+    soundToggle.classList.toggle('on', soundEnabled !== false);
+    musicToggle.classList.toggle('on', musicEnabled !== false);
+    tapMode.classList.toggle('active', controlMode === 'tap');
+    dragMode.classList.toggle('active', controlMode === 'drag');
+    
+    soundToggle.addEventListener('click', () => {
+      soundToggle.classList.toggle('on');
+      this.storage.setSetting('sound', soundToggle.classList.contains('on'));
+      this.toggleSound();
+    });
+    
+    musicToggle.addEventListener('click', () => {
+      musicToggle.classList.toggle('on');
+      this.storage.setSetting('music', musicToggle.classList.contains('on'));
+      this.toggleMusic();
+    });
+    
+    tapMode.addEventListener('click', () => {
+      tapMode.classList.add('active');
+      dragMode.classList.remove('active');
+      this.storage.setSetting('controlMode', 'tap');
+      this.input.setMode('tap');
+    });
+    
+    dragMode.addEventListener('click', () => {
+      dragMode.classList.add('active');
+      tapMode.classList.remove('active');
+      this.storage.setSetting('controlMode', 'drag');
+      this.input.setMode('drag');
+    });
+    
+    closeSettings.addEventListener('click', () => {
+      document.getElementById('settingsModal').classList.remove('show');
+    });
+  }
+
   toggleSound() {
-    const enabled = !this.storage.getSetting('sound');
-    this.storage.setSetting('sound', enabled);
+    const enabled = this.storage.getSetting('sound');
+    this.game.audio.setEnabled(enabled !== false);
     const soundBtn = document.getElementById('soundBtn');
-    if (enabled) {
-      soundBtn.classList.remove('muted');
-    } else {
+    if (enabled === false) {
       soundBtn.classList.add('muted');
+    } else {
+      soundBtn.classList.remove('muted');
     }
   }
 
   toggleMusic() {
-    const enabled = !this.storage.getSetting('music');
-    this.storage.setSetting('music', enabled);
+    const enabled = this.storage.getSetting('music');
+    this.game.audio.setMusicEnabled(enabled !== false);
     const musicBtn = document.getElementById('musicBtn');
-    if (enabled) {
-      musicBtn.classList.remove('muted');
-    } else {
+    if (enabled === false) {
       musicBtn.classList.add('muted');
+    } else {
+      musicBtn.classList.remove('muted');
     }
   }
 
   showSettingsModal() {
-    // Показ модального окна настроек
+    document.getElementById('settingsModal').classList.add('show');
   }
 
   start() {
@@ -145,20 +208,16 @@ class App {
     const dt = (now - this.lastTime) / 1000;
     this.lastTime = now;
     
-    // Очистка
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     
-    // Обновление
     this.game.update(dt);
     
-    // Рендер
     this.game.render(this.ctx);
     
     requestAnimationFrame(() => this.loop());
   }
 }
 
-// Запуск
 window.addEventListener('DOMContentLoaded', () => {
   console.log('DOM loaded');
   window.app = new App();
