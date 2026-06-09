@@ -1,6 +1,6 @@
 /**
  * Game - Главный игровой класс
- * Управление состоянием, уровнями, счётом
+ * Управление состоянием, уровнями, счётом, бонусами
  */
 
 import { BoardManager } from './board.js';
@@ -40,6 +40,32 @@ export class Game {
     this.maxShuffles = 3;
     
     this.musicStarted = false;
+    
+    this.activeBonus = null;
+    this.bonusTimer = null;
+    this.bonusEffects = {
+      'shield': { name: '🛡️ Щит', duration: 10000, color: '#4ADE80' },
+      'slow': { name: '⏰ Замедление', duration: 8000, color: '#4ECDC4' },
+      'double': { name: '✨ x2 Очки', duration: 12000, color: '#FFD700' },
+      'explode': { name: '💥 Взрыв', duration: 5000, color: '#FF6B9D' }
+    };
+  }
+
+  initAudio() {
+    if (!this.musicStarted) {
+      this.musicStarted = true;
+      this.audio.init();
+      
+      const musicEnabled = this.storage.getSetting('music');
+      if (musicEnabled !== false) {
+        this.audio.playBgm();
+      }
+      
+      const soundEnabled = this.storage.getSetting('sound');
+      if (soundEnabled === false) {
+        this.audio.setEnabled(false);
+      }
+    }
   }
 
   resize(width, height) {
@@ -59,16 +85,10 @@ export class Game {
     this.targetScore = level * 120 + 80;
     this.shuffleCount = 0;
     this.state = 'playing';
+    this.activeBonus = null;
     
     this.board.generateBoard(level);
     this.updateUI();
-    
-    // Запускаем музыку при первом уровне
-    if (!this.musicStarted) {
-      this.musicStarted = true;
-      this.audio.init();
-      this.audio.playBgm();
-    }
     
     const matches = this.matchFinder.findMatches();
     if (matches.length > 0) {
@@ -214,12 +234,17 @@ export class Game {
       }
     }
     
+    if (this.activeBonus === 'double') {
+      matchScore *= 2;
+    }
+    
     this.score += matchScore;
     this.combo++;
     this.multiplier = Math.min(1 + this.combo * 0.5, 5);
     
     this.audio.playMatch();
     this.showCombo();
+    this.checkBonusActivation();
     this.updateUI();
     
     await this.board.removeTiles(matches);
@@ -231,6 +256,44 @@ export class Game {
       await this.processMatches(newMatches);
     } else {
       this.checkLevelComplete();
+    }
+  }
+
+  checkBonusActivation() {
+    if (this.combo >= 5 && !this.activeBonus) {
+      const bonusKeys = Object.keys(this.bonusEffects);
+      const randomBonus = bonusKeys[Math.floor(Math.random() * bonusKeys.length)];
+      
+      this.activateBonus(randomBonus);
+    }
+  }
+
+  activateBonus(bonusKey) {
+    if (this.activeBonus) return;
+    
+    this.activeBonus = bonusKey;
+    const bonus = this.bonusEffects[bonusKey];
+    
+    this.showBonusPopup(bonus.name, bonus.color);
+    this.audio.playBonus();
+    
+    if (this.bonusTimer) {
+      clearTimeout(this.bonusTimer);
+    }
+    
+    this.bonusTimer = setTimeout(() => {
+      this.activeBonus = null;
+      this.bonusTimer = null;
+    }, bonus.duration);
+  }
+
+  showBonusPopup(text, color) {
+    const popup = document.querySelector('.bonus-popup');
+    if (popup) {
+      popup.textContent = text;
+      popup.style.color = color;
+      popup.classList.add('show');
+      setTimeout(() => popup.classList.remove('show'), 1000);
     }
   }
 
@@ -262,15 +325,31 @@ export class Game {
       this.state = 'levelComplete';
       this.audio.playWin();
       this.storage.completeLevel(this.level);
-      this.showLevelComplete();
+      
+      const scoreExcess = this.score - this.targetScore;
+      let levelsToSkip = 0;
+      
+      if (scoreExcess >= this.targetScore * 2) {
+        levelsToSkip = 2;
+      } else if (scoreExcess >= this.targetScore) {
+        levelsToSkip = 1;
+      }
+      
+      this.showLevelComplete(levelsToSkip);
     } else {
       setTimeout(() => this.checkValidMoves(), 100);
     }
   }
 
-  showLevelComplete() {
+  showLevelComplete(levelsToSkip = 0) {
     const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
+    modal.className = 'modal-overlay show';
+    
+    let nextLevelText = 'Следующий уровень →';
+    if (levelsToSkip > 0) {
+      nextLevelText = `Прыгнуть через ${levelsToSkip} уровень! →`;
+    }
+    
     modal.innerHTML = `
       <div class="modal-content">
         <h2>🎉 Уровень ${this.level} пройден!</h2>
@@ -278,7 +357,7 @@ export class Game {
           Очки: <strong>${this.score}</strong> / ${this.targetScore}
         </p>
         <button class="game-btn primary" id="nextLevelBtn">
-          Следующий уровень →
+          ${nextLevelText}
         </button>
       </div>
     `;
@@ -286,7 +365,7 @@ export class Game {
     
     document.getElementById('nextLevelBtn').addEventListener('click', () => {
       modal.remove();
-      this.startLevel(this.level + 1);
+      this.startLevel(this.level + 1 + levelsToSkip);
     });
   }
 
@@ -392,6 +471,7 @@ export class Game {
   }
   
   addTiles() {
-    // Добавить специальные плитки
+    this.board.addRandomTiles(3);
+    this.audio.playShuffle();
   }
 }
