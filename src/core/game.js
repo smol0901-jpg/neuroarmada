@@ -41,6 +41,7 @@ export class Game {
     
     this.musicStarted = false;
     
+    // Бонусы за комбо
     this.activeBonus = null;
     this.bonusTimer = null;
     this.bonusEffects = {
@@ -263,7 +264,6 @@ export class Game {
     if (this.combo >= 5 && !this.activeBonus) {
       const bonusKeys = Object.keys(this.bonusEffects);
       const randomBonus = bonusKeys[Math.floor(Math.random() * bonusKeys.length)];
-      
       this.activateBonus(randomBonus);
     }
   }
@@ -382,17 +382,12 @@ export class Game {
 
   showHintMove(bestMove) {
     this.clearHint();
-    
     this.hintTile = {
       row: bestMove.fromRow,
       col: bestMove.fromCol
     };
-    
     this.board.highlightTile(this.hintTile);
-    
-    this.hintTimeout = setTimeout(() => {
-      this.clearHint();
-    }, 3000);
+    this.hintTimeout = setTimeout(() => this.clearHint(), 3000);
   }
 
   clearHint() {
@@ -409,18 +404,12 @@ export class Game {
   shuffleBoard() {
     this.shuffleCount++;
     console.log('Shuffle #', this.shuffleCount);
-    
     this.board.shuffle();
     this.audio.playShuffle();
-    
-    setTimeout(() => {
-      this.checkValidMoves();
-    }, 300);
+    setTimeout(() => this.checkValidMoves(), 300);
   }
 
   updateUI() {
-    console.log('UI - Score:', this.score, 'Target:', this.targetScore);
-    
     const scoreEl = document.querySelector('.info-value:not(.target):not(.combo)');
     if (scoreEl) scoreEl.textContent = this.score;
     
