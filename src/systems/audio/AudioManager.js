@@ -181,49 +181,17 @@ export class AudioManager extends EventEmitter {
     }
   }
 
-  playClick() {
-    this.init();
-    this.playSound('click');
-  }
-
-  playSelect() {
-    this.init();
-    this.playSound('select');
-  }
-
-  playMatch() {
-    this.init();
-    this.playSound('match');
-  }
-
-  playError() {
-    this.init();
-    this.playSound('error');
-  }
-
-  playWin() {
-    this.init();
-    this.playSound('win');
-  }
-
-  playShuffle() {
-    this.init();
-    this.playSound('shuffle');
-  }
-
-  playCombo() {
-    this.init();
-    this.playSound('combo');
-  }
-
-  playBonus() {
-    this.init();
-    this.playSound('bonus');
-  }
+  playClick() { this.init(); this.playSound('click'); }
+  playSelect() { this.init(); this.playSound('select'); }
+  playMatch() { this.init(); this.playSound('match'); }
+  playError() { this.init(); this.playSound('error'); }
+  playWin() { this.init(); this.playSound('win'); }
+  playShuffle() { this.init(); this.playSound('shuffle'); }
+  playCombo() { this.init(); this.playSound('combo'); }
+  playBonus() { this.init(); this.playSound('bonus'); }
 
   playBgm() {
     if (!this.ctx || !this.musicEnabled || this.isPlaying) return;
-    
     this.isPlaying = true;
     this.playNextBgm();
   }
@@ -242,7 +210,6 @@ export class AudioManager extends EventEmitter {
       source.loop = true;
       source.connect(this.bgmGain);
       source.start();
-      
       this.activeSources.bgm = source;
     } else {
       this.playBgmSynthesis();
@@ -252,23 +219,18 @@ export class AudioManager extends EventEmitter {
   playBgmSynthesis() {
     const playBeat = () => {
       if (!this.isPlaying || !this.musicEnabled) return;
-      
       this.playTone(110, 0.1, 'sine', 'bgm');
       setTimeout(() => this.playTone(110, 0.1, 'sine', 'bgm'), 250);
       setTimeout(() => this.playTone(146, 0.15, 'sine', 'bgm'), 500);
-      
       setTimeout(playBeat, 1000);
     };
-    
     playBeat();
   }
 
   stopBgm() {
     this.isPlaying = false;
     if (this.activeSources.bgm) {
-      try {
-        this.activeSources.bgm.stop();
-      } catch (e) {}
+      try { this.activeSources.bgm.stop(); } catch (e) {}
       this.activeSources.bgm = null;
     }
   }
