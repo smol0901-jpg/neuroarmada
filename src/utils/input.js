@@ -56,17 +56,11 @@ export class InputManager {
 
   setupKeyboard() {
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'r' || e.key === 'к') {
-        this.emit('reset');
-      } else if (e.key === 'h' || e.key === 'р') {
-        this.emit('hint');
-      } else if (e.key === 'Escape') {
-        this.emit('escape');
-      } else if (e.key === 'm' || e.key === 'ь') {
-        this.emit('music');
-      } else if (e.key === 's' || e.key === 'ы') {
-        this.emit('sound');
-      }
+      if (e.key === 'r' || e.key === 'к') this.emit('reset');
+      else if (e.key === 'h' || e.key === 'р') this.emit('hint');
+      else if (e.key === 'Escape') this.emit('escape');
+      else if (e.key === 'm' || e.key === 'ь') this.emit('music');
+      else if (e.key === 's' || e.key === 'ы') this.emit('sound');
     });
   }
 
@@ -87,7 +81,6 @@ export class InputManager {
     
     this.touchStart = { x, y, time: Date.now() };
     this.isDragging = true;
-    
     this.createRipple(e.clientX, e.clientY);
   }
 
@@ -121,10 +114,7 @@ export class InputManager {
     const duration = Date.now() - this.touchStart.time;
     
     if (duration < this.tapDelay && this.isDragging) {
-      this.emit('tap', { 
-        x: this.touchStart.x, 
-        y: this.touchStart.y 
-      });
+      this.emit('tap', { x: this.touchStart.x, y: this.touchStart.y });
     }
     
     this.isDragging = false;
@@ -139,7 +129,6 @@ export class InputManager {
     ripple.style.width = '50px';
     ripple.style.height = '50px';
     document.body.appendChild(ripple);
-    
     setTimeout(() => ripple.remove(), 600);
   }
 
@@ -151,9 +140,7 @@ export class InputManager {
   }
 
   emit(event, data) {
-    this.listeners
-      .filter(l => l.event === event)
-      .forEach(l => l.callback(data));
+    this.listeners.filter(l => l.event === event).forEach(l => l.callback(data));
   }
 
   destroy() {
