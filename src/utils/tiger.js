@@ -12,11 +12,12 @@ export class TigerRenderer {
     };
   }
 
-  render(ctx, type, size) {
+  render(ctx, x, y, size, type) {
     const c = this.colors[type] || this.colors[0];
     const s = size / 2;
     
     ctx.save();
+    ctx.translate(x, y);
     
     // Голова
     ctx.beginPath();
