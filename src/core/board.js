@@ -31,7 +31,6 @@ export class BoardManager extends EventEmitter {
   resize(width, height) {
     console.log('Board resize:', width, height);
     
-    // Отступы для мобильных
     const maxWidth = width - 40;
     const maxHeight = height - 200;
     
@@ -42,23 +41,17 @@ export class BoardManager extends EventEmitter {
     
     this.tileSize = Math.max(40, Math.min(80, this.tileSize));
     
-    console.log('Tile size:', this.tileSize);
-    
-    // Ширина и высота поля
     const boardWidth = this.cols * (this.tileSize + this.padding * 2);
     const boardHeight = this.rows * (this.tileSize + this.padding * 2);
     
     this.offsetX = (width - boardWidth) / 2;
     this.offsetY = (height - boardHeight) / 2 + 20;
-    
-    console.log('Offset:', this.offsetX, this.offsetY);
   }
 
   generateBoard(level = 1) {
     console.log('Generating board, level:', level);
     this.grid = [];
     
-    // Генерируем поле
     for (let r = 0; r < this.rows; r++) {
       this.grid[r] = [];
       for (let c = 0; c < this.cols; c++) {
@@ -67,22 +60,20 @@ export class BoardManager extends EventEmitter {
       }
     }
     
-    // Убираем начальные матчи
     this.removeInitialMatches();
-    
-    console.log('Grid generated, first tile:', this.grid[0]?.[0]);
   }
 
   randomTile(row, col) {
     const types = [0, 1, 2, 3];
+    const pos = this.getTilePosition(row, col);
     return {
       type: types[Math.floor(Math.random() * types.length)],
       row: row,
       col: col,
-      x: col,
-      y: row,
-      targetX: col,
-      targetY: row,
+      x: pos.x,
+      y: pos.y,
+      targetX: pos.x,
+      targetY: pos.y,
       scale: 1,
       alpha: 1,
       rotation: 0
@@ -100,7 +91,6 @@ export class BoardManager extends EventEmitter {
       
       for (let r = 0; r < this.rows; r++) {
         for (let c = 0; c < this.cols; c++) {
-          // Проверка по горизонтали
           if (c >= 2) {
             if (this.grid[r][c].type === this.grid[r][c-1].type &&
                 this.grid[r][c].type === this.grid[r][c-2].type) {
@@ -108,7 +98,6 @@ export class BoardManager extends EventEmitter {
               matches = true;
             }
           }
-          // Проверка по вертикали
           if (r >= 2) {
             if (this.grid[r][c].type === this.grid[r-1][c].type &&
                 this.grid[r][c].type === this.grid[r-2][c].type) {
@@ -173,23 +162,19 @@ export class BoardManager extends EventEmitter {
     
     if (!tileA || !tileB) return;
 
-    // Получаем пиксельные позиции через getTilePosition
     const pos1 = this.getTilePosition(tile1.row, tile1.col);
     const pos2 = this.getTilePosition(tile2.row, tile2.col);
     
-    // Стартовые позиции (уже в пикселях)
     const startX1 = tileA.x;
     const startY1 = tileA.y;
     const startX2 = tileB.x;
     const startY2 = tileB.y;
     
-    // Целевые позиции (тоже в пикселях!)
     const targetX1 = pos2.x;
     const targetY1 = pos2.y;
     const targetX2 = pos1.x;
     const targetY2 = pos1.y;
 
-    // Анимация перемещения
     const duration = 200;
     const startTime = performance.now();
 
@@ -197,11 +182,8 @@ export class BoardManager extends EventEmitter {
       const animate = (currentTime) => {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
-        
-        // Easing функция (ease-out)
         const eased = 1 - Math.pow(1 - progress, 3);
         
-        // Интерполяция позиций
         tileA.x = startX1 + (targetX1 - startX1) * eased;
         tileA.y = startY1 + (targetY1 - startY1) * eased;
         tileB.x = startX2 + (targetX2 - startX2) * eased;
@@ -210,17 +192,14 @@ export class BoardManager extends EventEmitter {
         if (progress < 1) {
           requestAnimationFrame(animate);
         } else {
-          // Финализация позиций
           tileA.x = targetX1;
           tileA.y = targetY1;
           tileB.x = targetX2;
           tileB.y = targetY2;
           
-          // Обмен в сетке
           this.grid[tile1.row][tile1.col] = tileB;
           this.grid[tile2.row][tile2.col] = tileA;
           
-          // Обновляем координаты
           tileA.row = tile2.row;
           tileA.col = tile2.col;
           tileB.row = tile1.row;
@@ -248,18 +227,41 @@ export class BoardManager extends EventEmitter {
   async dropTiles() {
     let dropped = false;
     
+    // Обрабатываем каждый столбец
     for (let c = 0; c < this.cols; c++) {
+      // Собираем все непустые плитки в этом столбце (снизу вверх)
+      const column = [];
       for (let r = this.rows - 1; r >= 0; r--) {
-        if (this.grid[r][c].alpha === 0) {
-          for (let above = r - 1; above >= 0; above--) {
-            if (this.grid[above][c].alpha !== 0) {
-              this.grid[r][c] = this.grid[above][c];
-              this.grid[above][c] = { alpha: 0 };
-              dropped = true;
-              break;
-            }
-          }
+        if (this.grid[r][c].alpha !== 0) {
+          column.push(this.grid[r][c]);
         }
+      }
+      
+      // Размещаем их внизу столбца
+      for (let i = 0; i < column.length; i++) {
+        const newRow = this.rows - 1 - i;
+        const tile = column[i];
+        
+        // Обновляем позицию в сетке
+        this.grid[newRow][c] = tile;
+        
+        // Обновляем координаты плитки
+        tile.row = newRow;
+        tile.col = c;
+        
+        // Обновляем визуальные координаты
+        const pos = this.getTilePosition(newRow, c);
+        tile.x = pos.x;
+        tile.y = pos.y;
+        
+        if (newRow !== column.length - 1 - i) {
+          dropped = true;
+        }
+      }
+      
+      // Заполняем верхние пустые клетки
+      for (let r = 0; r < this.rows - column.length; r++) {
+        this.grid[r][c] = { alpha: 0 };
       }
     }
     
@@ -269,15 +271,21 @@ export class BoardManager extends EventEmitter {
   }
 
   async fillEmpty() {
+    let filled = false;
+    
     for (let c = 0; c < this.cols; c++) {
       for (let r = 0; r < this.rows; r++) {
         if (this.grid[r][c].alpha === 0) {
-          this.grid[r][c] = this.randomTile(r, c);
+          const tile = this.randomTile(r, c);
+          this.grid[r][c] = tile;
+          filled = true;
         }
       }
     }
     
-    await this.sleep(150);
+    if (filled) {
+      await this.sleep(150);
+    }
   }
 
   shuffle() {
@@ -289,21 +297,20 @@ export class BoardManager extends EventEmitter {
       }
     }
     
-    // Перемешиваем
     for (let i = tiles.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
     }
     
-    // Возвращаем в сетку
     let idx = 0;
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         this.grid[r][c] = tiles[idx];
         this.grid[r][c].row = r;
         this.grid[r][c].col = c;
-        this.grid[r][c].x = c;
-        this.grid[r][c].y = r;
+        const pos = this.getTilePosition(r, c);
+        this.grid[r][c].x = pos.x;
+        this.grid[r][c].y = pos.y;
         idx++;
       }
     }
@@ -323,13 +330,11 @@ export class BoardManager extends EventEmitter {
   }
 
   update(dt) {
-    // Обновление позиций (движение к цели)
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         const tile = this.grid[r][c];
         if (!tile) continue;
         
-        // Плавное движение к целевой позиции
         if (tile.alpha > 0) {
           const targetPos = this.getTilePosition(tile.row, tile.col);
           tile.x += (targetPos.x - tile.x) * 0.2;
@@ -340,6 +345,14 @@ export class BoardManager extends EventEmitter {
   }
 
   render(ctx) {
+    ctx.fillStyle = 'rgba(26, 26, 46, 0.5)';
+    ctx.fillRect(
+      this.offsetX - 10,
+      this.offsetY - 10,
+      this.cols * (this.tileSize + this.padding * 2) + 20,
+      this.rows * (this.tileSize + this.padding * 2) + 20
+    );
+    
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         const tile = this.grid[r][c];
@@ -347,25 +360,26 @@ export class BoardManager extends EventEmitter {
         
         const pos = this.getTilePosition(r, c);
         
-        // Используем текущую позицию (с анимацией)
-        const x = tile.x || pos.x;
-        const y = tile.y || pos.y;
+        ctx.save();
+        ctx.globalAlpha = tile.alpha;
+        ctx.translate(pos.x, pos.y);
         
-        this.tigerRenderer.render(ctx, x, y, this.tileSize, tile.type);
+        this.tigerRenderer.render(ctx, 0, 0, this.tileSize, tile.type);
         
-        // Подсветка
         if (this.highlightedTile && 
             this.highlightedTile.row === r && 
             this.highlightedTile.col === c) {
           ctx.strokeStyle = '#FFD700';
           ctx.lineWidth = 3;
           ctx.strokeRect(
-            x - this.tileSize / 2 - 2,
-            y - this.tileSize / 2 - 2,
-            this.tileSize + 4,
-            this.tileSize + 4
+            -this.tileSize / 2,
+            -this.tileSize / 2,
+            this.tileSize,
+            this.tileSize
           );
         }
+        
+        ctx.restore();
       }
     }
   }
